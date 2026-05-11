@@ -1,34 +1,56 @@
 import "dotenv/config";
+import http from "http";
+import { sql } from "drizzle-orm";
 import { createApp } from "./app";
+import { db, pool } from "./db/client";
 
 const PORT = parseInt(process.env["PORT"] ?? "3000", 10);
 
 async function bootstrap(): Promise<void> {
-  const app = createApp();
+  // 1. Verify database connection before binding the port
+  try {
+    await db.execute(sql`SELECT 1`);
+    console.log("[server] Database connection verified.");
+  } catch (err) {
+    console.error("[server] Fatal: Cannot connect to database.", err);
+    process.exit(1);
+  }
 
-  const server = app.listen(PORT, () => {
+  const app = createApp();
+  const server = http.createServer(app);
+
+  // 2. Start listening
+  server.listen(PORT, () => {
     console.log(
-      `[server] CI/CD Reliability Intelligence Platform running on port ${PORT} (${process.env["NODE_ENV"] ?? "development"})`
+      JSON.stringify({
+        event: "server_started",
+        port: PORT,
+        environment: process.env["NODE_ENV"] ?? "development",
+        timestamp: new Date().toISOString(),
+      })
     );
   });
 
-  // Graceful shutdown on SIGTERM (Docker / Kubernetes stop signal)
-  process.on("SIGTERM", () => {
-    console.log("[server] SIGTERM received — shutting down gracefully.");
-    server.close(() => {
-      console.log("[server] HTTP server closed.");
-      process.exit(0);
-    });
-  });
+  // 3. Graceful shutdown
+  async function shutdown(signal: string): Promise<void> {
+    console.log(`[server] ${signal} received — shutting down gracefully.`);
 
-  // Graceful shutdown on SIGINT (Ctrl+C in development)
-  process.on("SIGINT", () => {
-    console.log("[server] SIGINT received — shutting down gracefully.");
     server.close(() => {
       console.log("[server] HTTP server closed.");
-      process.exit(0);
     });
-  });
+
+    try {
+      await pool.end();
+      console.log("[server] Database pool closed.");
+    } catch (err) {
+      console.error("[server] Error closing database pool:", err);
+    }
+
+    process.exit(0);
+  }
+
+  process.on("SIGTERM", () => { shutdown("SIGTERM").catch(console.error); });
+  process.on("SIGINT",  () => { shutdown("SIGINT").catch(console.error); });
 }
 
 bootstrap().catch((err: unknown) => {

@@ -17,7 +17,7 @@ const config: Config = {
     url: process.env.DATABASE_URL,
   },
   verbose: true,
-  strict: true,
+  strict: false,
 };
 
 export default config;
