@@ -6,6 +6,7 @@ import { requestLogger } from "./middleware/request-logger";
 import { errorHandler } from "./middleware/error-handler";
 import repoRoutes from "./routes/repo.routes";
 import scanRoutes from "./routes/scan.routes";
+import { aiRoutes } from "./routes/ai.routes";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -18,6 +19,12 @@ const ENDPOINTS = [
   "GET    /api/repos/:id/scans/latest         — Get latest scan",
   "GET    /api/repos/:id/scans/:scanId        — Get specific scan",
   "POST   /api/repos/:id/scans/:scanId/rerun  — Rerun a scan",
+  "POST   /api/scans/:scanId/explain          — Explain a scan result",
+  "GET    /api/scans/:scanId/explain/:jobId   — Get explanation status",
+  "POST   /api/scans/:scanId/remediate        — Generate remediations",
+  "GET    /api/scans/:scanId/remediate/:jobId — Get remediation status",
+  "POST   /api/scans/:scanId/ai-report        — Generate full AI report",
+  "GET    /api/scans/:scanId/ai-report/:jobId — Get full AI report",
 ];
 
 export function createApp(): Application {
@@ -68,6 +75,7 @@ export function createApp(): Application {
   // ── Routes ────────────────────────────────────────────────────────────────
   app.use("/api/repos", repoRoutes);
   app.use("/api/repos", scanRoutes);
+  app.use("/api", aiRoutes);
 
   // ── 404 fallthrough ───────────────────────────────────────────────────────
   app.use("*", (req: Request, res: Response) => {
