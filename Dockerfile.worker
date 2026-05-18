@@ -1,0 +1,60 @@
+# ── Stage 1: Build ───────────────────────────────────────────────────────────
+
+FROM node:20-alpine AS builder
+
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy dependency manifests
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Copy source
+COPY tsconfig.json ./
+COPY src/ ./src/
+
+# Build TypeScript
+RUN pnpm exec tsc --outDir dist
+
+# ── Stage 2: Production Runtime ──────────────────────────────────────────────
+
+FROM node:20-alpine AS runtime
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Create non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy dependency manifests and install production deps only
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built JavaScript from builder stage
+COPY --from=builder /app/dist ./dist
+
+# Set environment
+ENV NODE_ENV=production
+
+# Switch to non-root user
+USER appuser
+
+# Healthcheck — workers expose no HTTP, so check process is alive
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "process.exit(0)"
+
+# Start worker using dumb-init for graceful shutdown
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/workers/worker-manager.js"]

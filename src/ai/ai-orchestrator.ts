@@ -209,6 +209,25 @@ export class AIOrchestrator {
     }
   }
 
+  async generateFullReport(
+    scanId: string,
+    repoId: string,
+    aiContext: AIContext,
+    findings: AIFinding[],
+    workflowContents: Map<string, string>
+  ): Promise<AIFullReport> {
+    const jobId = uuidv4();
+    this.jobs.set(jobId, {
+      jobId, scanId, repoId, taskType: 'full-report',
+      status: 'pending', progress: 0, startedAt: new Date()
+    });
+    await this.processFullReportJob(jobId, scanId, repoId, aiContext, findings, workflowContents);
+    const result = this.jobs.get(jobId);
+    if (result?.status === 'failed') throw new Error(result.error);
+    if (!result?.result?.fullReport) throw new Error("Report generation failed");
+    return result.result.fullReport;
+  }
+
   async startFullReportJob(
     scanId: string,
     repoId: string,

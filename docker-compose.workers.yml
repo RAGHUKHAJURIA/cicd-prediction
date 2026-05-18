@@ -1,0 +1,99 @@
+##############################################################################
+# docker-compose.workers.yml — Horizontally scalable worker services
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.workers.yml up
+#   docker compose -f docker-compose.yml -f docker-compose.workers.yml up --scale scan-worker=5
+##############################################################################
+
+services:
+  # ── Scan Worker ──────────────────────────────────────────────────────────
+  scan-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: ["node", "dist/workers/worker-manager.js"]
+    environment:
+      NODE_ENV: production
+      WORKER_TYPE: scan
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    networks:
+      - ciintel
+
+  # ── Analysis Worker ──────────────────────────────────────────────────────
+  analysis-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: ["node", "dist/workers/worker-manager.js"]
+    environment:
+      NODE_ENV: production
+      WORKER_TYPE: analysis
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    networks:
+      - ciintel
+
+  # ── AI Worker ────────────────────────────────────────────────────────────
+  ai-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: ["node", "dist/workers/worker-manager.js"]
+    environment:
+      NODE_ENV: production
+      WORKER_TYPE: ai
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "2"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1G
+        reservations:
+          cpus: "0.1"
+          memory: 256M
+    networks:
+      - ciintel

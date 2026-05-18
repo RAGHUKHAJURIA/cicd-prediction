@@ -4,10 +4,13 @@ import { ReportBuilder, AnalysisReport } from './report-builder';
 import { detectAndParse } from '../parsers';
 import { registerAllRules, ruleRegistry } from '../rules';
 
+import type { NormalizedWorkflow } from '../models/workflow.model';
+
 export interface AnalysisInput {
   repoId: string;
   scanId: string;
-  files: CIFile[];
+  files?: CIFile[];
+  workflows?: NormalizedWorkflow[];
   previousScore?: number;
   config?: Partial<RuleConfig>;
 }
@@ -38,19 +41,20 @@ export class AnalysisEngine {
 
   async analyze(input: AnalysisInput): Promise<AnalysisReport> {
     const startTime = Date.now();
-    const parsedWorkflows = [];
+    const parsedWorkflows = input.workflows ? [...input.workflows] : [];
 
-    // STEP 1 - Parse
-    for (const file of input.files) {
-      try {
-        const parseResult = detectAndParse(file.content, file.filePath, input.repoId);
-        if (parseResult.result) {
-          // Normalize sourceFile to filePath for context
-          parseResult.result.sourceFile = file.filePath;
-          parsedWorkflows.push(parseResult.result);
+    if (input.files) {
+      // STEP 1 - Parse
+      for (const file of input.files) {
+        try {
+          const parseResult = detectAndParse(file.content, file.filePath, input.repoId);
+          if (parseResult.success && parseResult.result) {
+            parseResult.result.sourceFile = file.filePath;
+            parsedWorkflows.push(parseResult.result);
+          }
+        } catch (err) {
+          // Log error
         }
-      } catch (err) {
-        // Log error
       }
     }
 

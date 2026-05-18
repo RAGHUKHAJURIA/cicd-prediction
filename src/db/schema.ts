@@ -25,9 +25,11 @@ export const repoStatusEnum = pgEnum("repo_status", [
 ]);
 
 export const scanStatusEnum = pgEnum("scan_status", [
+  "queued",
   "running",
   "completed",
   "failed",
+  "cancelled",
 ]);
 
 export const severityEnum = pgEnum("severity", [
@@ -79,6 +81,12 @@ export const scans = pgTable("scans", {
     .references(() => repos.id),
   status: scanStatusEnum("status").notNull().default("running"),
   branch: text("branch").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   triggeredAt: timestamp("triggered_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -164,6 +172,61 @@ export const workflows = pgTable("workflows", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+});
+
+// ─── Phase 3 AI Tables ────────────────────────────────────────────────────────
+
+export const aiExplanations = pgTable("ai_explanations", {
+  id: uuid("id").primaryKey(),
+  scanId: uuid("scan_id").notNull(),
+  repoId: uuid("repo_id").notNull(),
+  ruleId: text("rule_id"),
+  explanation: text("explanation").notNull(),
+  riskContext: text("risk_context"),
+  urgency: text("urgency"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const aiRemediations = pgTable("ai_remediations", {
+  id: uuid("id").primaryKey(),
+  scanId: uuid("scan_id").notNull(),
+  repoId: uuid("repo_id").notNull(),
+  ruleId: text("rule_id"),
+  title: text("title").notNull(),
+  beforeCode: text("before_code"),
+  afterCode: text("after_code"),
+  language: text("language"),
+  instructions: text("instructions"),
+  safe: boolean("safe"),
+  warning: text("warning"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const aiPredictions = pgTable("ai_predictions", {
+  id: uuid("id").primaryKey(),
+  scanId: uuid("scan_id").notNull(),
+  repoId: uuid("repo_id").notNull(),
+  ruleId: text("rule_id"),
+  scenario: text("scenario").notNull(),
+  trigger: text("trigger"),
+  impact: text("impact"),
+  likelihood: text("likelihood"),
+  timeToFailure: text("time_to_failure"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const analysisReports = pgTable("analysis_reports", {
+  id: uuid("id").primaryKey(),
+  scanId: uuid("scan_id").notNull(),
+  repoId: uuid("repo_id").notNull(),
+  overallScore: integer("overall_score").notNull(),
+  riskGrade: text("risk_grade").notNull(),
+  criticalCount: integer("critical_count").notNull().default(0),
+  highCount: integer("high_count").notNull().default(0),
+  mediumCount: integer("medium_count").notNull().default(0),
+  lowCount: integer("low_count").notNull().default(0),
+  reportJson: text("report_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export type WorkflowRow = typeof workflows.$inferSelect;

@@ -1,18 +1,95 @@
+##############################################################################
+# docker-compose.yml — Full local development stack
+#
+# Services: API, PostgreSQL, Redis, Bull Board (embedded in API)
+#
+# Usage:
+#   docker compose up          — start all services
+#   docker compose up -d       — start in background
+#   docker compose down -v     — stop and remove volumes
+##############################################################################
+
 services:
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16
-    restart: always
-
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: cicd_reliability
-
+      POSTGRES_USER: ciintel
+      POSTGRES_PASSWORD: ciintel_dev_password
+      POSTGRES_DB: ciintel
     ports:
       - "5433:5432"
-
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ciintel -d ciintel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ciintel
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - ciintel
+
+  # ── API Server ───────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: ["node", "dist/server.js"]
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      BULL_BOARD_USERNAME: admin
+      BULL_BOARD_PASSWORD: admin123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - ciintel
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
 
 volumes:
-  postgres_data:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+
+networks:
+  ciintel:
+    driver: bridge
