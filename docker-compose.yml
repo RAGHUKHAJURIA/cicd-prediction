@@ -52,7 +52,7 @@ services:
   # ── API Server ───────────────────────────────────────────────────────────
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     command: ["node", "dist/server.js"]

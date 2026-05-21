@@ -10,7 +10,7 @@ services:
   # ── Scan Worker ──────────────────────────────────────────────────────────
   scan-worker:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     command: ["node", "dist/workers/worker-manager.js"]
@@ -40,7 +40,7 @@ services:
   # ── Analysis Worker ──────────────────────────────────────────────────────
   analysis-worker:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     command: ["node", "dist/workers/worker-manager.js"]
@@ -70,7 +70,7 @@ services:
   # ── AI Worker ────────────────────────────────────────────────────────────
   ai-worker:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     command: ["node", "dist/workers/worker-manager.js"]

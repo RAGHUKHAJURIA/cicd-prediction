@@ -1,4 +1,4 @@
-export type { NormalizedWorkflow } from '../../../src/models/workflow.model';
+export type { NormalizedWorkflow } from '../../../backend/src/models/workflow.model';
 export interface RepoSettings {
     autoScanOnPush?: boolean;
     notifyOnCritical?: boolean;

@@ -13,6 +13,8 @@ import queueRoutes from "./routes/queue.routes";
 import { mountBullBoard } from "./queue/bull-board";
 import { healthService } from "./monitoring/health.service";
 import { metricsService } from "./monitoring/metrics.service";
+import { githubAppRouter } from "./routes/github-app.routes";
+import { integrationsRouter } from "./routes/integrations.routes";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -114,6 +116,8 @@ export function createApp(): Application {
   app.use("/api/jobs", jobRoutes);
   app.use("/api", aiRoutes);
   app.use("/api/queue", queueRoutes);
+  app.use("/api/github-app", githubAppRouter);
+  app.use("/api/integrations", integrationsRouter);
 
   // ── 404 fallthrough ───────────────────────────────────────────────────────
   app.use("*", (req: Request, res: Response) => {
