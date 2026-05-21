@@ -5,10 +5,11 @@
 @layer base {
   html {
     color-scheme: dark;
+    scroll-behavior: smooth;
   }
 
   body {
-    background-color: #0F0F12;
+    background-color: #0d1117;
     color: #e6edf3;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -56,22 +57,32 @@
 
 /* Scan phase pulse — blue breathing glow */
 @keyframes scanPhasePulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
   }
+
   50% {
     box-shadow: 0 0 0 12px rgba(59, 130, 246, 0);
   }
 }
+
 .scan-phase-pulse {
   animation: scanPhasePulse 1.5s ease-in-out infinite;
 }
 
 /* Score ring fill */
 @keyframes ringFill {
-  from { stroke-dashoffset: 408.4; }
-  to   { stroke-dashoffset: var(--ring-offset); }
+  from {
+    stroke-dashoffset: 408.4;
+  }
+
+  to {
+    stroke-dashoffset: var(--ring-offset);
+  }
 }
+
 .score-ring-fill {
   animation: ringFill 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
@@ -82,11 +93,13 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 .finding-reveal {
   opacity: 0;
   animation: fadeSlideUp 0.4s ease-out forwards;
@@ -98,11 +111,13 @@
     opacity: 0;
     transform: translateX(-8px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
   }
 }
+
 .rule-cascade {
   opacity: 0;
   animation: ruleCheck 0.3s ease-out forwards;
@@ -110,47 +125,91 @@
 
 /* Scan line effect for active scanning state */
 @keyframes scanLine {
-  0%   { transform: translateY(-100%); opacity: 0; }
-  10%  { opacity: 1; }
-  90%  { opacity: 1; }
-  100% { transform: translateY(100%); opacity: 0; }
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  90% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
 }
+
 .scan-line {
   animation: scanLine 2s ease-in-out infinite;
 }
 
 /* Severity count counter */
 @keyframes countUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
+
 .count-up {
   animation: countUp 0.3s ease-out forwards;
 }
 
 /* Glowing border for active/processing cards */
 @keyframes borderGlow {
-  0%, 100% { border-color: rgba(59, 130, 246, 0.3); }
-  50%      { border-color: rgba(59, 130, 246, 0.8); }
+
+  0%,
+  100% {
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  50% {
+    border-color: rgba(59, 130, 246, 0.8);
+  }
 }
+
 .border-glow-active {
   animation: borderGlow 2s ease-in-out infinite;
 }
 
 /* Typewriter cursor blink for terminal/AI output */
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
+
 .cursor-blink {
   animation: blink 1s step-end infinite;
 }
 
 /* Step connector line grow */
 @keyframes lineGrow {
-  from { transform: scaleY(0); }
-  to   { transform: scaleY(1); }
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
 }
+
 .line-grow {
   animation: lineGrow 0.8s ease-out forwards;
   transform-origin: top;
@@ -160,12 +219,67 @@
    STAGGER DELAY UTILITIES
    ═══════════════════════════════════════════════════ */
 
-.animate-delay-50  { animation-delay: 50ms; }
-.animate-delay-100 { animation-delay: 100ms; }
-.animate-delay-150 { animation-delay: 150ms; }
-.animate-delay-200 { animation-delay: 200ms; }
-.animate-delay-300 { animation-delay: 300ms; }
-.animate-delay-400 { animation-delay: 400ms; }
-.animate-delay-500 { animation-delay: 500ms; }
-.animate-delay-600 { animation-delay: 600ms; }
-.animate-delay-800 { animation-delay: 800ms; }
+.animate-delay-50 {
+  animation-delay: 50ms;
+}
+
+.animate-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animate-delay-150 {
+  animation-delay: 150ms;
+}
+
+.animate-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animate-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animate-delay-400 {
+  animation-delay: 400ms;
+}
+
+.animate-delay-500 {
+  animation-delay: 500ms;
+}
+
+.animate-delay-600 {
+  animation-delay: 600ms;
+}
+
+.animate-delay-800 {
+  animation-delay: 800ms;
+}
+
+/* ═══════════════════════════════════════════════════
+   GITHUB HEATMAP GRID
+   ═══════════════════════════════════════════════════ */
+
+/*
+  Each cell lives on its own GPU compositor layer.
+  will-change: transform = no repaint on move, pure compositor.
+  transition is ONLY set on the base (exit) state so:
+    • enter → instant snap-up  (data-active overrides transition: none)
+    • leave → 120ms ease-out fall-back
+*/
+.heatmap-cell {
+  border-radius: 2px;
+  opacity: 0.15;
+  transform: translateY(0);
+  /* Exit animation only: short fade-out on leave */
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+/* Active: cursor is directly over this cell.
+   transition: none = zero-latency enter snap.
+   translateY lifts the cell upward instantly. */
+.heatmap-cell[data-active="true"] {
+  transition: none;
+  opacity: 1;
+  transform: translateY(-6px);
+  will-change: opacity, transform;
+}

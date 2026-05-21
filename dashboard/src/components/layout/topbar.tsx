@@ -49,62 +49,64 @@ export function Topbar() {
   };
 
   return (
-    <div className="h-12 bg-canvas border-b border-border flex items-center justify-between px-4 shrink-0 z-10">
-      {/* Breadcrumbs */}
-      <div className="flex items-center text-sm">
-        <Link href="/" className="text-fg-muted hover:text-fg transition-colors">
-          Home
-        </Link>
-        {breadcrumbs.map((crumb) => (
-          <div key={crumb.href} className="flex items-center">
-            <span className="mx-2 text-fg-subtle">/</span>
-            {crumb.isLast ? (
-              <span className="text-fg font-medium">{crumb.name}</span>
-            ) : (
-              <Link href={crumb.href} className="text-fg-muted hover:text-fg transition-colors">
-                {crumb.name}
-              </Link>
-            )}
-          </div>
-        ))}
-      </div>
+    <div className="absolute top-0 left-0 right-0 z-40 px-6 pt-4 pointer-events-none">
+      <div className="h-14 rounded-full bg-canvas-subtle/70 backdrop-blur-xl border border-white/[0.08] flex items-center justify-between px-6 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] pointer-events-auto">
+        {/* Breadcrumbs */}
+        <div className="flex items-center text-sm">
+          <Link href="/" className="text-fg-muted hover:text-fg transition-colors">
+            Home
+          </Link>
+          {breadcrumbs.map((crumb) => (
+            <div key={crumb.href} className="flex items-center">
+              <span className="mx-2 text-fg-subtle">/</span>
+              {crumb.isLast ? (
+                <span className="text-fg font-semibold">{crumb.name}</span>
+              ) : (
+                <Link href={crumb.href} className="text-fg-muted hover:text-fg transition-colors">
+                  {crumb.name}
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-3">
-        {isRepoPage && (
-          <button 
-            onClick={handleScan}
-            disabled={isScanning}
-            className={clsx(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-300",
-              isScanning 
-                ? "bg-canvas-subtle text-fg border border-accent animate-pulse glow-accent" 
-                : "bg-accent hover:bg-accent-hover text-white border border-white/10"
-            )}
-          >
-            {isScanning ? (
-              <>
-                <span className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                Scanning...
-              </>
-            ) : (
-              <>
-                <Play className="h-3.5 w-3.5 fill-current" />
-                Scan now
-              </>
-            )}
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          {isRepoPage && (
+            <button 
+              onClick={handleScan}
+              disabled={isScanning}
+              className={clsx(
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 border",
+                isScanning 
+                  ? "bg-white/[0.06] text-fg border-accent animate-pulse glow-accent" 
+                  : "bg-accent hover:bg-accent-hover text-white border-white/10 shadow-sm"
+              )}
+            >
+              {isScanning ? (
+                <>
+                  <span className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                  Scanning...
+                </>
+              ) : (
+                <>
+                  <Play className="h-3.5 w-3.5 fill-current" />
+                  Scan now
+                </>
+              )}
+            </button>
+          )}
+          
+          <button className="h-8 w-8 rounded-full flex items-center justify-center text-fg-muted hover:text-fg hover:bg-white/[0.04] transition-all border border-transparent">
+            <Search className="h-4 w-4" />
           </button>
-        )}
-        
-        <button className="h-7 w-7 rounded flex items-center justify-center text-fg-muted hover:text-fg hover:bg-canvas-subtle transition-colors border border-transparent">
-          <Search className="h-4 w-4" />
-        </button>
-        
-        <button className="h-7 w-7 rounded flex items-center justify-center text-fg-muted hover:text-fg hover:bg-canvas-subtle transition-colors border border-transparent relative">
-          <Bell className="h-4 w-4" />
-          {/* Mock notification dot */}
-          <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 bg-accent rounded-full border border-canvas" />
-        </button>
+          
+          <button className="h-8 w-8 rounded-full flex items-center justify-center text-fg-muted hover:text-fg hover:bg-white/[0.04] transition-all border border-transparent relative">
+            <Bell className="h-4 w-4" />
+            {/* Mock notification dot */}
+            <span className="absolute top-2.5 right-2.5 h-1.5 w-1.5 bg-accent rounded-full border border-canvas-subtle" />
+          </button>
+        </div>
       </div>
     </div>
   );

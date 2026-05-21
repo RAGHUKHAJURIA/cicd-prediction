@@ -22,9 +22,9 @@ export function Sidebar() {
   ];
 
   return (
-    <div className="w-[240px] bg-canvas border-r border-border flex flex-col h-full flex-shrink-0">
+    <div className="w-[260px] my-4 ml-4 rounded-3xl bg-canvas-subtle/40 backdrop-blur-xl border border-white/[0.06] flex flex-col h-[calc(100vh-2rem)] flex-shrink-0 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] z-30">
       {/* Logo Area */}
-      <div className="h-16 flex items-center px-4 border-b border-border/50">
+      <div className="h-16 flex items-center px-4 border-b border-white/[0.06]">
         <ShieldCheck className="text-accent h-6 w-6 mr-2 glow-accent rounded-full" />
         <span className="font-semibold text-white tracking-wide">
           Reliability<span className="text-accent">.io</span>
@@ -40,13 +40,13 @@ export function Sidebar() {
               key={link.href}
               href={link.href}
               className={clsx(
-                'flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                'flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 border',
                 isActive
-                  ? 'bg-accent-subtle border-l-2 border-accent text-white'
-                  : 'text-fg-muted hover:bg-canvas-subtle hover:text-fg'
+                  ? 'bg-accent/10 border-accent/20 text-white font-semibold shadow-[0_0_12px_rgba(31,111,235,0.15)]'
+                  : 'border-transparent text-fg-muted hover:bg-white/[0.04] hover:text-fg'
               )}
             >
-              <link.icon className={clsx('h-4 w-4 mr-3', isActive ? 'text-accent-hover' : '')} />
+              <link.icon className={clsx('h-4 w-4 mr-3', isActive ? 'text-accent' : '')} />
               <span className="flex-1">{link.name}</span>
               {link.badge && (
                 <span className="bg-accent text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold min-w-[20px] text-center">
@@ -74,8 +74,10 @@ export function Sidebar() {
                 key={repo.id}
                 href={`/repos/${repo.id}`}
                 className={clsx(
-                  'flex items-center px-3 py-1.5 rounded-md text-sm transition-colors group',
-                  isActive ? 'bg-canvas-subtle text-white' : 'text-fg-muted hover:bg-canvas-subtle hover:text-fg'
+                  'flex items-center px-3 py-1.5 rounded-lg text-sm transition-all duration-200 group border border-transparent',
+                  isActive 
+                    ? 'bg-white/[0.06] border-white/[0.04] text-white font-medium shadow-sm' 
+                    : 'text-fg-muted hover:bg-white/[0.04] hover:text-fg'
                 )}
               >
                 <div className={clsx('h-1.5 w-1.5 rounded-full mr-2', statusColor)} />
@@ -85,7 +87,7 @@ export function Sidebar() {
                     'text-[10px] px-1.5 py-0.5 rounded pill border font-bold opacity-0 group-hover:opacity-100 transition-opacity',
                     repo.latestScan.riskGrade === 'A' ? 'text-success border-success-subtle bg-success-subtle/30' :
                     repo.latestScan.riskGrade === 'F' ? 'text-danger border-danger-subtle bg-danger-subtle/30' :
-                    'text-fg border-border bg-canvas-inset'
+                    'text-fg border-white/[0.08] bg-white/[0.02]'
                   )}>
                     {repo.latestScan.riskGrade}
                   </span>
@@ -104,12 +106,12 @@ export function Sidebar() {
       </div>
 
       {/* Queue Status (Bottom) */}
-      <div className="p-4 border-t border-border/50">
+      <div className="p-4 border-t border-white/[0.06]">
         <div className={clsx(
-          "rounded-md p-3 border text-sm transition-all duration-300",
+          "rounded-xl p-3 border text-sm transition-all duration-300",
           activeJobsCount > 0 
-            ? "border-accent-subtle bg-accent-subtle/20 glow-accent"
-            : "border-border/50 bg-canvas-inset"
+            ? "border-accent/30 bg-accent/10 glow-accent"
+            : "border-white/[0.06] bg-white/[0.02]"
         )}>
           <div className="flex items-center justify-between mb-1">
             <span className="text-fg-muted font-medium text-xs uppercase tracking-wide">Queue Status</span>

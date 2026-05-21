@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { ScrollFillText } from "@/components/scroll-fill-text";
+import { GithubHeatmapBg } from "@/components/github-heatmap-bg";
+import { ArchitectureMap } from "@/components/architecture-map";
 import {
   ArrowRight,
   ShieldAlert,
@@ -12,6 +14,7 @@ import {
   Globe,
   Loader2,
   Sparkles,
+  Home as HomeIcon,
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 
@@ -74,131 +77,161 @@ export default function Home() {
   const dotPosition = useTransform(howItWorksScrollY, [0, 1], ["0%", "100%"]);
 
   return (
-    <div className="min-h-screen bg-charcoal text-gray-50 selection:bg-cyber/30 selection:text-white">
-      {/* Background glow */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-cyber/10 blur-[120px] rounded-full pointer-events-none -z-10" />
-
+    <div className="min-h-screen text-gray-50 selection:bg-success/30 selection:text-white bg-black">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-charcoal/60 backdrop-blur-xl border-b border-white/[0.06]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="fixed top-4 w-full z-50 px-4">
+        <nav className="max-w-7xl mx-auto h-14 rounded-full bg-[#0d1117]/40 backdrop-blur-2xl border border-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.05),0_8px_32px_0_rgba(0,0,0,0.5)] px-4 flex items-center justify-between">
+          {/* Left: Logo & Title */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-cyber/10 border border-cyber/20 flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5 text-cyber" />
+            <div className="w-8 h-8 rounded-lg bg-success/10 border border-success/20 flex items-center justify-center">
+              <ShieldAlert className="w-4.5 h-4.5 text-success" />
             </div>
-            <span className="font-bold font-sans tracking-tight text-lg">
-              Antigravity
+            <span className="font-extrabold font-sans tracking-tight text-base text-white">
+              Antigravity.
             </span>
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* Center Pill */}
+          <div className="hidden md:flex items-center gap-1 bg-white/[0.03] border border-white/[0.08] rounded-full px-1 py-1 backdrop-blur-md">
+            <Link
+              href="/"
+              className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold bg-success/15 text-success border border-success/25"
+            >
+              <HomeIcon className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </Link>
+            {[
+              { name: "Platform", href: "#" },
+              { name: "Use Cases", href: "#" },
+              { name: "Solutions", href: "#", badge: "NEW" },
+              { name: "Pricing", href: "#" },
+              { name: "Docs", href: "#" },
+            ].map((item, i) => (
+              <Link
+                key={i}
+                href={item.href}
+                className="px-3 py-1 rounded-full text-[11px] font-semibold text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+              >
+                <span>{item.name}</span>
+                {item.badge && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black tracking-wider bg-success/15 text-success border border-success/25 scale-90">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-3">
+            <button className="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold text-gray-400 hover:text-white border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.02] transition-colors">
+              <Globe className="w-3.5 h-3.5" />
+              <span>English</span>
+            </button>
             <Link
               href="/repos"
-              className="text-sm font-medium text-gray-400 hover:text-white transition-colors"
+              className="text-[11px] font-bold text-gray-400 hover:text-white transition-colors px-2"
             >
               Dashboard
             </Link>
             <Link
               href="/repos"
-              className="px-5 py-2 rounded-lg font-sans font-semibold text-white text-sm bg-cyber hover:bg-blue-600 shadow-glow-blue hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+              className="px-4 py-1.5 rounded-full font-sans font-bold text-white text-[11px] bg-success hover:bg-success-muted shadow-glow-success hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center gap-1"
             >
-              Scan Your First Repo
+              <span>Get Started</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-        </div>
-      </nav>
+        </nav>
+      </div>
 
-      {/* Hero Section */}
-      <main className="pt-32 pb-24 px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="max-w-5xl mx-auto text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyber/10 text-cyber border border-cyber/20 text-xs font-bold uppercase tracking-widest mb-8"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Scanning 10,000+ CI/CD pipelines</span>
-          </motion.div>
+      {/* ── HERO SECTION wrapped with heatmap bg ── */}
+      <div className="relative overflow-hidden" style={{ minHeight: "100vh" }}>
+        {/* Canvas heatmap — fills only this wrapper */}
+        <GithubHeatmapBg />
 
-          <motion.h1
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut", delay: 0.15 }}
-            className="text-5xl md:text-7xl font-sans font-black tracking-tighter mb-6 leading-tight"
-          >
-            Find Pipeline Failures <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyber to-indigo">
-              Before They Happen
-            </span>
-          </motion.h1>
+        {/* Bottom gradient fade: heatmap → solid black */}
+        <div
+          className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
+          style={{
+            height: "480px",
+            background: "linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 1) 100%)",
+          }}
+        />
 
-          <motion.p
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut", delay: 0.3 }}
-            className="text-lg md:text-xl font-sans font-medium text-gray-400 max-w-2xl mx-auto mb-10"
-          >
-            16 security rules. AI-powered explanations. Instant fixes.
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut", delay: 0.45 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20"
-          >
-            <Link
-              href="/repos"
-              className="px-6 py-3 rounded-lg font-sans font-semibold text-white text-sm bg-cyber hover:bg-blue-600 shadow-glow-blue hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center gap-2 w-full sm:w-auto justify-center"
+        {/* Hero content */}
+        <main className="pt-32 pb-24 px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="max-w-5xl mx-auto text-center">
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-success/10 text-success border border-success/20 text-xs font-bold uppercase tracking-widest mb-8"
             >
-              Scan Your First Repo Free
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-            <button className="px-6 py-3 rounded-lg font-sans font-semibold text-sm text-gray-300 bg-transparent border border-white/10 hover:bg-white/5 hover:border-white/20 transition-all duration-200 flex items-center gap-2 w-full sm:w-auto justify-center">
-              View Demo
-            </button>
-          </motion.div>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Scanning 10,000+ CI/CD pipelines</span>
+            </motion.div>
 
-          {/* Stats Row */}
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut", delay: 0.6 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto border-t border-white/[0.06] pt-12"
-          >
-            {[
-              { label: "Security Rules", value: "16" },
-              { label: "Risk Grading", value: "A-F" },
-              { label: "AI-Powered Fixes", value: "✓" },
-              { label: "Scan Time", value: "< 10s" },
-            ].map((stat, i) => (
-              <div key={i} className="text-center">
-                <div className="text-3xl font-sans font-bold text-white mb-1">
-                  {stat.value}
-                </div>
-                <div className="text-xs font-sans font-medium text-gray-500 uppercase tracking-wider">
-                  {stat.label}
-                </div>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-      </main>
+            <motion.h1
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut", delay: 0.15 }}
+              className="text-5xl md:text-7xl font-sans font-black tracking-tighter mb-6 leading-tight"
+            >
+              Find Pipeline Failures <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-success to-[#2ea043]">
+                Before They Happen
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut", delay: 0.3 }}
+              className="text-lg md:text-xl font-sans font-medium text-gray-400 max-w-2xl mx-auto mb-10"
+            >
+              16 security rules. AI-powered explanations. Instant fixes.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut", delay: 0.45 }}
+              className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8"
+            >
+              <Link
+                href="/repos"
+                className="px-6 py-3 rounded-lg font-sans font-semibold text-white text-sm bg-success hover:bg-success-muted shadow-glow-success hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center gap-2 w-full sm:w-auto justify-center"
+              >
+                Scan Your First Repo Free
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <button className="px-6 py-3 rounded-lg font-sans font-semibold text-sm text-gray-300 bg-transparent border border-white/10 hover:bg-white/5 hover:border-white/20 transition-all duration-200 flex items-center gap-2 w-full sm:w-auto justify-center">
+                View Demo
+              </button>
+            </motion.div>
+
+          </div>
+
+          <ArchitectureMap />
+        </main>
+      </div>
 
       {/* Kinetic Text Reveal Section */}
       <ScrollFillText />
 
       {/* Live Demo Card Section */}
-      <section className="py-24 relative z-10 border-t border-white/[0.06] bg-surface-dark/50">
+      <section className="py-24 relative z-10 bg-black">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="bg-[#16181D] rounded-2xl p-6 lg:p-8 border border-white/[0.06] shadow-xl relative overflow-hidden"
+            className="bg-[#161b22] rounded-2xl p-6 lg:p-8 border border-white/[0.06] shadow-xl relative overflow-hidden"
           >
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-            
+
             <div className="flex flex-col md:flex-row items-start md:items-center gap-8 md:gap-12">
               {/* Score Ring */}
               <div className="relative w-48 h-48 mx-auto md:mx-0 flex-shrink-0">
@@ -251,7 +284,7 @@ export default function Home() {
                   <div className="text-gray-500 mt-2">→ Loaded .github/workflows/deploy.yml (GitHub Actions)</div>
                   <div className="text-gray-500 mt-1">→ Found outdated and unpinned dependency: `actions/checkout@v2`</div>
                   <div className="text-yellow-500 mt-2">→ Warn: Insecure run parameter `enable-custom-arguments` permitted</div>
-                  <div className="text-cyber mt-4 font-bold flex items-center gap-1">
+                  <div className="text-success mt-4 font-bold flex items-center gap-1">
                     Generating automated PR with SHA-pinned revisions<span className="cursor-blink">_</span>
                   </div>
                 </div>
@@ -262,7 +295,7 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section ref={howItWorksRef} className="py-24 relative z-10 border-t border-white/[0.06]">
+      <section ref={howItWorksRef} className="py-24 relative z-10 border-t border-white/[0.06] bg-black">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-sans font-bold tracking-tight mb-4">
@@ -275,11 +308,11 @@ export default function Home() {
 
           <div className="relative pb-12">
             <div className="absolute left-8 top-0 bottom-0 w-px bg-white/[0.06] md:left-1/2 md:-translate-x-1/2" />
-            <motion.div 
-              className="absolute left-[32.5px] md:left-1/2 w-3 h-3 bg-cyber rounded-full shadow-[0_0_10px_rgba(59,130,246,0.6)] z-20 -translate-x-1/2"
+            <motion.div
+              className="absolute left-[32.5px] md:left-1/2 w-3 h-3 bg-success rounded-full shadow-[0_0_10px_rgba(63,185,80,0.6)] z-20 -translate-x-1/2"
               style={{ top: dotPosition, marginTop: "-6px" }}
             />
-            
+
             {[
               {
                 title: "Connect Repository",
@@ -291,7 +324,7 @@ export default function Home() {
                 title: "Scan Runs Automatically",
                 desc: "Our engine parses your YAML and Dockerfiles, checking against 16 core rules.",
                 icon: Loader2,
-                color: "text-cyber",
+                color: "text-success",
                 animate: "animate-spin",
               },
               {
@@ -307,15 +340,13 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ duration: 0.5, delay: i * 0.2 }}
-                className={`relative flex items-center gap-6 mb-12 last:mb-0 ${
-                  i % 2 === 0 ? "md:flex-row-reverse md:text-right" : "md:flex-row"
-                } md:gap-16 pl-16 md:pl-0`}
+                className={`relative flex items-center gap-6 mb-12 last:mb-0 ${i % 2 === 0 ? "md:flex-row-reverse md:text-right" : "md:flex-row"
+                  } md:gap-16 pl-16 md:pl-0`}
               >
                 <div className="flex-1 md:w-1/2" />
                 <div className="flex-1 md:w-1/2">
-                  <div className={`w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-4 ${
-                    i % 2 === 0 ? "md:ml-auto" : ""
-                  }`}>
+                  <div className={`w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-4 ${i % 2 === 0 ? "md:ml-auto" : ""
+                    }`}>
                     <step.icon className={`w-6 h-6 ${step.color} ${step.animate || ""}`} />
                   </div>
                   <h3 className="text-xl font-sans font-bold text-white mb-2">{step.title}</h3>
@@ -328,9 +359,9 @@ export default function Home() {
       </section>
 
       {/* Rule Categories */}
-      <section className="py-24 relative z-10 border-t border-white/[0.06] bg-surface-dark/30">
+      <section className="py-24 relative z-10 border-t border-white/[0.06] bg-black">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-           <div className="text-center mb-12">
+          <div className="text-center mb-12">
             <h2 className="text-2xl md:text-3xl font-sans font-bold tracking-tight mb-2">
               Comprehensive Coverage
             </h2>
@@ -348,7 +379,7 @@ export default function Home() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, delay: i * 0.1 }}
-                className="bg-surface-mid rounded-xl p-5 border border-white/[0.06] hover:border-white/[0.12] transition-colors"
+                className="bg-[#161b22] rounded-xl p-5 border border-white/[0.06] hover:border-white/[0.12] transition-colors"
               >
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-4 border ${cat.color}`}>
                   <ShieldAlert className="w-5 h-5" />
@@ -362,7 +393,7 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="py-12 border-t border-white/[0.06] bg-charcoal text-center text-sm font-sans text-gray-500">
+      <footer className="py-12 border-t border-white/[0.06] bg-black text-center text-sm font-sans text-gray-500">
         <div className="max-w-7xl mx-auto px-6">
           <p>© 2026 Antigravity. Built for CI/CD Reliability Intelligence.</p>
         </div>
@@ -374,9 +405,9 @@ export default function Home() {
 function SeverityPill({ severity, count }: { severity: string, count: number }) {
   const colors: Record<string, string> = {
     critical: 'bg-red-500/10 text-red-500 border-red-500/20',
-    high:     'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    medium:   'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-    low:      'bg-green-500/10 text-green-500 border-green-500/20',
+    high: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+    medium: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
+    low: 'bg-green-500/10 text-green-500 border-green-500/20',
   };
 
   return (
