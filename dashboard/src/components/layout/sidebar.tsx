@@ -16,6 +16,7 @@ export function Sidebar() {
 
   const links = [
     { name: 'Home', href: '/', icon: LayoutDashboard },
+    { name: 'Analyze URL', href: '/analyze', icon: ShieldCheck, badge: 'New' },
     { name: 'Repositories', href: '/repos', icon: GitBranch },
     { name: 'Queue', href: '/queue', icon: Activity, badge: activeJobsCount > 0 ? activeJobsCount : null },
     { name: 'Settings', href: '/settings', icon: Settings },

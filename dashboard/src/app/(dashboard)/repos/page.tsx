@@ -1,11 +1,11 @@
 'use client';
 
 import { useRepos, useQueueStats } from '@/lib/hooks/use-scan';
-import { BoltshiftHero } from '@/components/ui/boltshift-hero';
 import { RepoCard } from '@/components/repos/repo-card';
 import { AddRepoModal } from '@/components/repos/add-repo-modal';
 import { useState, useMemo } from 'react';
-import { Search, Plus, Loader2 } from 'lucide-react';
+import { Search, Plus, Loader2, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ReposPage() {
   const { repos, isLoading } = useRepos();
@@ -28,10 +28,43 @@ export default function ReposPage() {
 
   if (repos.length === 0) {
     return (
-      <>
-        <BoltshiftHero onAdd={() => setIsAddModalOpen(true)} />
+      <div className="flex flex-col items-center justify-center min-h-[75vh] p-6 text-center relative overflow-hidden bg-canvas">
+        {/* Background glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-accent/5 blur-[100px] pointer-events-none" />
+        
+        <div className="max-w-md w-full relative z-10 space-y-6 bg-white/[0.02] border border-white/[0.06] rounded-3xl p-8 backdrop-blur-xl shadow-2xl">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center animate-pulse-slow">
+            <Sparkles className="w-8 h-8 text-accent" />
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-white tracking-tight">No Scanned Repositories</h2>
+            <p className="text-xs text-fg-muted leading-relaxed">
+              Get started by scanning a public or private repository URL using our AI-powered reliability engine. 
+              We'll analyze your CI/CD files and generate instant fixes.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3 pt-2">
+            <Link
+              href="/analyze"
+              className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent hover:bg-accent-hover text-white rounded-xl text-xs font-semibold shadow-[0_0_20px_rgba(31,111,235,0.25)] hover:scale-[1.01] transition-all"
+            >
+              <Sparkles className="w-4 h-4" />
+              Analyze Repo URL
+            </Link>
+            
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center justify-center gap-2 w-full py-2.5 bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] text-fg-muted hover:text-fg rounded-xl text-xs font-semibold transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              Add Repository directly
+            </button>
+          </div>
+        </div>
         <AddRepoModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
-      </>
+      </div>
     );
   }
 
@@ -76,6 +109,13 @@ export default function ReposPage() {
               className="pl-9 pr-3 py-1.5 bg-canvas-inset border border-border rounded-md text-sm text-fg focus:outline-none focus:border-accent w-64"
             />
           </div>
+          <Link
+            href="/analyze"
+            className="flex items-center gap-2 px-4 py-1.5 border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.02] hover:bg-white/[0.04] text-fg-muted hover:text-fg rounded-md text-sm font-medium transition-colors shadow-sm"
+          >
+            <Sparkles className="w-4 h-4 text-accent animate-pulse-slow" />
+            Quick Analyze
+          </Link>
           <button 
             onClick={() => setIsAddModalOpen(true)}
             className="flex items-center gap-2 px-4 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-md text-sm font-medium transition-colors shadow-sm"

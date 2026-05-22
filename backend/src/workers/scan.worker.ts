@@ -187,7 +187,7 @@ export class ScanWorker {
     }
     await this.updateProgress(job, progressPayload)
 
-    const token = githubToken ?? process.env.GITHUB_TOKEN
+    let token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN
     if (!token) {
       throw new Error(
         `No GitHub token for repo ${owner}/${repoName}. ` +
@@ -224,6 +224,7 @@ export class ScanWorker {
         const content = await github.getFileContent(
           owner, repoName, file.path, branch
         )
+        await queueRedis.setex(`file-content:${scanId}:${file.path}`, 86400, content)
         return { filePath: file.path, content }
       }
     )
@@ -420,12 +421,13 @@ export class ScanWorker {
       warnings = parsed.warnings
       parserNameActual = parsed.parser
     } else {
-      const token = githubToken ?? process.env.GITHUB_TOKEN
+      let token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN
       if (!token) {
         throw new Error(`No GitHub token for repo ${owner}/${repoName}.`)
       }
       const github = new GitHubClient(token)
       const content = await github.getFileContent(owner, repoName, filePath, branch)
+      await queueRedis.setex(`file-content:${scanId}:${filePath}`, 86400, content)
       
       try {
         const parserName = detectFileType(filePath, content)

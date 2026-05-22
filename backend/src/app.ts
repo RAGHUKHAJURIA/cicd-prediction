@@ -15,6 +15,7 @@ import { healthService } from "./monitoring/health.service";
 import { metricsService } from "./monitoring/metrics.service";
 import { githubAppRouter } from "./routes/github-app.routes";
 import { integrationsRouter } from "./routes/integrations.routes";
+import analyzeRoutes from "./routes/analyze.routes";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -118,6 +119,7 @@ export function createApp(): Application {
   app.use("/api/queue", queueRoutes);
   app.use("/api/github-app", githubAppRouter);
   app.use("/api/integrations", integrationsRouter);
+  app.use("/api/analyze", analyzeRoutes);
 
   // ── 404 fallthrough ───────────────────────────────────────────────────────
   app.use("*", (req: Request, res: Response) => {
