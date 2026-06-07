@@ -20,6 +20,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db/pool";
 import { authRoutes } from "./routes/auth.routes";
+import { githubAuthRouter } from "./routes/githubAuth";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -56,11 +57,9 @@ export function createApp(): Application {
   // ── CORS ───────────────────────────────────────────────────────────────────
   app.use(
     cors({
-      origin: (_origin, callback) => {
-        callback(null, true);
-      },
+      origin: process.env.DASHBOARD_URL || "http://localhost:3001",
       credentials: true,
-      methods: ["GET", "POST", "PATCH", "DELETE"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
@@ -71,6 +70,8 @@ export function createApp(): Application {
   // ── Body parsing (after webhook route) ────────────────────────────────────
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true }));
+
+  app.set("trust proxy", 1);
 
   const PgSession = connectPgSimple(session);
 
@@ -143,6 +144,8 @@ export function createApp(): Application {
   // ── Routes ────────────────────────────────────────────────────────────────
   app.use("/auth", authRoutes);
   app.use("/api/auth", authRoutes);
+  app.use("/auth", githubAuthRouter);
+  app.use("/api/auth", githubAuthRouter);
   app.use("/api/repos", repoRoutes);
   app.use("/api/repos", scanRoutes);
   app.use("/api/jobs", jobRoutes);

@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 export function LoginForm() {
-  const { login } = useAuth();
+  const { login, mutate } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const registered = searchParams.get("registered") === "true";
   const prefilledEmail = searchParams.get("email") ?? "";
 
@@ -21,9 +22,12 @@ export function LoginForm() {
   const [passwordError, setPasswordError] = useState("");
   const [serverError, setServerError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGithubSubmitting, setIsGithubSubmitting] = useState(false);
+  const [isGitHubLoggingIn, setIsGitHubLoggingIn] = useState(false);
 
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  const errorParam = searchParams.get("error");
+  const successParam = searchParams.get("success");
 
   // Sync state if prefilledEmail becomes available later
   useEffect(() => {
@@ -31,6 +35,44 @@ export function LoginForm() {
       setEmail(prefilledEmail);
     }
   }, [prefilledEmail]);
+
+  useEffect(() => {
+    if (successParam === "github") {
+      setIsGitHubLoggingIn(true);
+      setServerError("");
+      mutate()
+        .then((updatedUser) => {
+          if (updatedUser) {
+            const from = searchParams.get("from") || "/repos";
+            router.push(from);
+          } else {
+            setServerError("Failed to sync GitHub session. Please try logging in again.");
+            setIsGitHubLoggingIn(false);
+          }
+        })
+        .catch((err) => {
+          console.error("Error syncing GitHub session:", err);
+          setServerError("An error occurred during GitHub login. Please try again.");
+          setIsGitHubLoggingIn(false);
+        });
+    }
+  }, [successParam, mutate, router, searchParams]);
+
+  useEffect(() => {
+    if (errorParam) {
+      if (errorParam === "state_mismatch") {
+        setServerError("Security check failed (CSRF state mismatch). Please try again.");
+      } else if (errorParam === "access_denied") {
+        setServerError("Access denied: You cancelled the GitHub authorization request.");
+      } else if (errorParam === "account_conflict") {
+        setServerError("Account conflict: The email associated with this GitHub profile is already linked to a different credentials account.");
+      } else if (errorParam === "email_required") {
+        setServerError("GitHub did not return a verified email address. Please check your GitHub settings.");
+      } else {
+        setServerError("GitHub authentication failed. Please try again.");
+      }
+    }
+  }, [errorParam]);
 
   useEffect(() => {
     if (prefilledEmail && passwordRef.current) {
@@ -78,14 +120,19 @@ export function LoginForm() {
     }
   };
 
-  const handleGithubLogin = async () => {
-    setServerError("");
-    setIsGithubSubmitting(true);
-    // Simulate OAuth handshake API latency
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setIsGithubSubmitting(false);
-    setServerError("GitHub Social Login is not configured. Please sign in with your email and password.");
-  };
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+  const githubAuthUrl = `${apiBaseUrl}/auth/github`;
+
+  if (isGitHubLoggingIn) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 gap-4">
+        <div className="h-10 w-10 border-4 border-success border-t-transparent rounded-full animate-spin shadow-glow-success" />
+        <p className="text-gray-300 font-medium text-sm animate-pulse">
+          Signing in with GitHub...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -109,7 +156,7 @@ export function LoginForm() {
       </div>
 
       {serverError && (
-        <div className="flex items-start gap-3 p-4 rounded-2xl bg-danger/10 border border-danger/30 text-danger text-sm leading-normal">
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-danger/10 border border-danger/30 text-danger text-sm leading-normal text-left">
           <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
           <span>{serverError}</span>
         </div>
@@ -204,21 +251,15 @@ export function LoginForm() {
       </div>
 
       {/* GitHub Login Button */}
-      <button
-        type="button"
-        onClick={handleGithubLogin}
-        disabled={isGithubSubmitting}
-        className="h-11 rounded-full border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] disabled:bg-transparent text-white font-semibold text-sm flex items-center justify-center gap-2.5 transition-all duration-200 cursor-pointer"
+      <a
+        href={githubAuthUrl}
+        className="h-11 rounded-full bg-[#24292e] hover:bg-[#1f2327] border border-white/5 text-white font-semibold text-sm flex items-center justify-center gap-2.5 transition-all duration-200 cursor-pointer shadow-md hover:scale-[1.01] active:scale-[0.99]"
       >
-        {isGithubSubmitting ? (
-          <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-        ) : (
-          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-            <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
-          </svg>
-        )}
-        <span>Sign in with GitHub</span>
-      </button>
+        <svg className="w-5 h-5 fill-current text-white" viewBox="0 0 24 24" aria-hidden="true">
+          <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+        </svg>
+        <span>Continue with GitHub</span>
+      </a>
 
       {/* Redirect Link */}
       <div className="text-center mt-3 text-xs text-gray-400">

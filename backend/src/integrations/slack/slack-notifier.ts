@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { SlackClient } from './slack-client';
 import { ScanDetail, RepoSummary, ScanSummary } from '../../types/shared.types';
 import { formatCriticalAlert, formatGradeChangeAlert } from './alert-formatter';

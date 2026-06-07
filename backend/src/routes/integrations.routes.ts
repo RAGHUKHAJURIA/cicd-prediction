@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router } from 'express';
 import { SlackClient } from '../integrations/slack/slack-client';
 

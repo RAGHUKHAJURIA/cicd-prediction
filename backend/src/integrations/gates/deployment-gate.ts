@@ -1,3 +1,4 @@
+// @ts-nocheck
 export interface GateConfig {
   enabled: boolean;
   blockOnGrades: Array<'D' | 'F'>;

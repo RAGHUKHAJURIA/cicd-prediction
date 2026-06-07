@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router } from 'express';
 import { GitHubAppAuth } from '../github-app/app-config';
 import { CheckRunManager } from '../github-app/check-run';

@@ -89,7 +89,7 @@ async function runTests() {
   console.log("\nStarting Session Authentication Test Suite...\n");
 
   // Clear existing test data
-  await db.execute(sql`TRUNCATE TABLE repos, users CASCADE`);
+  await db.execute(sql`DELETE FROM users WHERE email IN ('test@example.com', 'dummy@example.com')`);
 
   const app = createApp();
   const server = http.createServer(app);
@@ -121,8 +121,8 @@ async function runTests() {
   // Cache session cookie for subsequent tests
   let authedCookie: string | null = null;
 
-  // TEST 1 — Register with valid data returns 201 and sets cookie
-  await test("TEST 1 — Register with valid data returns 201 and sets cookie", async () => {
+  // TEST 1 — Register with valid data returns 201
+  await test("TEST 1 — Register with valid data returns 201", async () => {
     const res = await fetch(`${baseUrl}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -136,14 +136,11 @@ async function runTests() {
     assert.strictEqual(res.status, 201);
     const body = (await res.json()) as any;
     assert.strictEqual(body.success, true);
-    assert.ok(body.data.user.id);
-    assert.strictEqual(body.data.user.email, testEmail);
-    assert.strictEqual(body.data.user.username, testUsername);
-    assert.strictEqual(body.data.user.password, undefined);
+    assert.strictEqual(body.data.registered, true);
+    assert.strictEqual(body.data.email, testEmail);
 
     const cookie = getSessionCookie(res.headers);
-    assert.ok(cookie);
-    assert.ok(cookie.includes("cicd.sid"));
+    assert.ok(!cookie, "Set-Cookie header should not be present on registration");
   });
 
   // TEST 2 — Register with duplicate email returns 409
@@ -317,9 +314,8 @@ async function runTests() {
 
   // TEST 13 — Session regenerated on login (session fixation prevention)
   await test("TEST 13 — Session regenerated on login (session fixation prevention)", async () => {
-    // 1. Get a session cookie by hitting register/login/me before authenticating or registering a new dummy
     const dummyEmail = "dummy@example.com";
-    const resReg = await fetch(`${baseUrl}/auth/register`, {
+    await fetch(`${baseUrl}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -328,19 +324,34 @@ async function runTests() {
         username: "dummy",
       }),
     });
-    const firstSessionId = getSessionId(resReg.headers);
-    assert.ok(firstSessionId);
 
-    // 2. Perform login for the same dummy
-    const resLogin = await fetch(`${baseUrl}/auth/login`, {
+    // 1. Log in as test user to get a valid session cookie
+    const resLogin1 = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: testEmail,
+        password: testPassword,
+      }),
+    });
+    const firstCookie = getSessionCookie(resLogin1.headers);
+    const firstSessionId = getSessionId(resLogin1.headers);
+    assert.ok(firstSessionId);
+    assert.ok(firstCookie);
+
+    // 2. Perform login for dummy user while sending the first session cookie
+    const resLogin2 = await fetch(`${baseUrl}/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cookie": firstCookie,
+      },
       body: JSON.stringify({
         email: dummyEmail,
         password: testPassword,
       }),
     });
-    const secondSessionId = getSessionId(resLogin.headers);
+    const secondSessionId = getSessionId(resLogin2.headers);
     assert.ok(secondSessionId);
 
     assert.notStrictEqual(firstSessionId, secondSessionId);

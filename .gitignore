@@ -31,3 +31,6 @@ npm-debug.log*
 # Coverage
 coverage/
 .nyc_output/
+
+FULL_PROJECT_DOCUMENTATION.md
+PROJECT_DOCS.md

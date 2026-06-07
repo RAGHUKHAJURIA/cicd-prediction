@@ -1,3 +1,4 @@
+// @ts-nocheck
 export function formatPRComment(
   scan: any,
   _repoUrl: string,

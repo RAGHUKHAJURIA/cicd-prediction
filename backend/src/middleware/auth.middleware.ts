@@ -21,6 +21,7 @@ declare module "express-session" {
     email: string;
     username: string;
     role: string;
+    githubAuthState?: string;
   }
 }
 

@@ -1,9 +1,24 @@
 import { db } from "../db/client";
 import { users } from "../db/schema";
 import { hashPassword, verifyPassword, validatePasswordStrength } from "../utils/password";
-import { encryptIfPresent, decryptIfPresent } from "../utils/encryption";
+import { encryptToken, decryptToken } from "../lib/tokenCrypto";
 import { eq } from "drizzle-orm";
 import { AppError } from "../middleware/error-handler";
+
+function encryptIfPresent(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return encryptToken(value);
+}
+
+function decryptIfPresent(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return decryptToken(value);
+  } catch (err: any) {
+    console.error("Failed to decrypt token in authService:", err.message);
+    return null;
+  }
+}
 
 export interface RegisterInput {
   email: string;
@@ -36,8 +51,14 @@ export interface SessionData {
   role: string;
 }
 
+export interface RegisterResult {
+  email: string;
+  username: string;
+  registered: true;
+}
+
 class AuthService {
-  async register(input: RegisterInput): Promise<AuthUser> {
+  async register(input: RegisterInput): Promise<RegisterResult> {
     // STEP 1 — Normalize email (lowercase, trim whitespace)
     const normalizedEmail = input.email.toLowerCase().trim();
 
@@ -83,16 +104,11 @@ class AuthService {
       throw new AppError(500, "User registration failed", "REGISTRATION_FAILED");
     }
 
-    // STEP 7 — Return AuthUser (never include password hash in return)
+    // STEP 7 — Return RegisterResult (never include password hash in return)
     return {
-      id: user.id,
       email: user.email,
       username: user.username,
-      role: user.role,
-      avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified,
-      githubUsername: user.githubUsername,
-      createdAt: user.createdAt,
+      registered: true,
     };
   }
 

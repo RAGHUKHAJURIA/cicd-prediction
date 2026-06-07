@@ -9,10 +9,10 @@ import { AppError } from "../middleware/error-handler";
 
 export const authRoutes = Router();
 
-// Rate limiter for login: 5 attempts per IP per 15 minutes
+// Rate limiter for login: 5 attempts per IP per 15 minutes (100 in development to prevent lockouts)
 const loginRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: process.env["NODE_ENV"] === "development" ? 100 : 5,
   keyPrefix: "login",
   message: "Too many attempts. Try again in 15 minutes.",
 });
@@ -53,33 +53,15 @@ authRoutes.post(
   validate(registerSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const user = await authService.register(req.body);
+      const result = await authService.register(req.body);
 
-      req.session.regenerate((err) => {
-        if (err) {
-          return next(new AppError(500, "Session regeneration failed", "SESSION_ERROR"));
-        }
-
-        req.session.userId = user.id;
-        req.session.email = user.email;
-        req.session.username = user.username;
-        req.session.role = user.role;
-
-        res.status(201).json({
-          success: true,
-          message: "Account created successfully",
-          data: {
-            user: {
-              id: user.id,
-              email: user.email,
-              username: user.username,
-              role: user.role,
-              emailVerified: user.emailVerified,
-              avatarUrl: user.avatarUrl,
-              createdAt: user.createdAt,
-            },
-          },
-        });
+      res.status(201).json({
+        success: true,
+        message: "Account created successfully. Please sign in.",
+        data: {
+          email: result.email,
+          registered: true,
+        },
       });
     } catch (err) {
       next(err);
