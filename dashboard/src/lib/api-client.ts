@@ -40,6 +40,7 @@ class APIClient {
       ...options,
       method,
       headers,
+      credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     });
 
@@ -73,7 +74,7 @@ class APIClient {
     
     const query = searchParams.toString();
     const result = await this.request<any>('GET', `/api/repos${query ? `?${query}` : ''}`);
-    return { repos: result.data || [], pagination: result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 } };
+    return { repos: result.data?.repos || [], pagination: result.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 } };
   }
 
   async getRepo(id: string): Promise<RepoSummary> {
@@ -82,7 +83,17 @@ class APIClient {
   }
 
   async createRepo(data: CreateRepoInput): Promise<RepoSummary> {
-    const result = await this.request<{ data: RepoSummary }>('POST', '/api/repos', data);
+    const payload = {
+      repoUrl: data.url,
+      defaultBranch: data.branch || 'main',
+      githubToken: data.url.includes('github.com') ? data.token : undefined,
+      gitlabToken: data.url.includes('gitlab.com') ? data.token : undefined,
+      settings: {
+        autoScanOnPush: data.autoScanOnPush ?? false,
+        notifyOnCritical: data.notifyOnCritical ?? true,
+      }
+    };
+    const result = await this.request<{ data: RepoSummary }>('POST', '/api/repos', payload);
     return result.data;
   }
 
@@ -112,7 +123,7 @@ class APIClient {
     
     const query = searchParams.toString();
     const result = await this.request<any>('GET', `/api/repos/${repoId}/scans${query ? `?${query}` : ''}`);
-    return { scans: result.data || [], pagination: result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 } };
+    return { scans: result.data?.scans || [], pagination: result.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 } };
   }
 
   async getLatestScan(repoId: string): Promise<ScanDetail> {

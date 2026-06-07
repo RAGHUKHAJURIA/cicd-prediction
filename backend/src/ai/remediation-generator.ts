@@ -1,4 +1,4 @@
-import { claudeClient, ClaudeClient } from './claude-client';
+import { geminiClient, GeminiClient } from './gemini-client';
 import { patchBuilder, PatchBuilder, PatchResult, DiffOutput } from './patch-builder';
 import { tokenCounter } from './token-counter';
 import { AITaskType } from './ai-response.types';
@@ -48,7 +48,7 @@ export interface ScanRemediationReport {
 export class RemediationGenerator {
 
   constructor(
-    private client: ClaudeClient = claudeClient,
+    private client: GeminiClient = geminiClient,
     private patches: PatchBuilder = patchBuilder
   ) {}
 

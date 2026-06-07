@@ -1,6 +1,6 @@
 export * from './ai-response.types';
 export * from './token-counter';
-export * from './claude-client';
+export * from './gemini-client';
 export * from './prompt-builder';
 export * from './explanation-engine';
 export * from './failure-predictor';
@@ -12,7 +12,7 @@ export * from './fallback-generator';
 export * from './ai-orchestrator';
 export {
   tokenCounter,
-  claudeClient,
+  geminiClient,
   explanationEngine,
   failurePredictor,
   patchBuilder,

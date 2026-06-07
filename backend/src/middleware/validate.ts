@@ -55,6 +55,7 @@ export function validateQuery(schema: ZodSchema): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.query);
     if (!result.success) {
+      console.error("Query Validation failed on URL:", req.originalUrl, req.query, formatZodError(result.error));
       res.status(422).json({
         success: false,
         error: "Validation failed",

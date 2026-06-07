@@ -21,6 +21,8 @@ import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db/pool";
 import { authRoutes } from "./routes/auth.routes";
 import { githubAuthRouter } from "./routes/githubAuth";
+import { githubReposRoutes } from "./routes/github-repos.routes";
+import { githubActionsRoutes } from "./routes/github-actions.routes";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -154,6 +156,8 @@ export function createApp(): Application {
   app.use("/api/github-app", githubAppRouter);
   app.use("/api/integrations", integrationsRouter);
   app.use("/api/analyze", analyzeRoutes);
+  app.use("/api/github", githubReposRoutes);
+  app.use("/api/github/actions", githubActionsRoutes);
 
   // ── 404 fallthrough ───────────────────────────────────────────────────────
   app.use("*", (req: Request, res: Response) => {

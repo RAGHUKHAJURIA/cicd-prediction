@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { v4 as uuidv4 } from 'uuid';
 import { tokenCounter } from './token-counter';
 import {
@@ -6,7 +6,7 @@ import {
   AIErrorCode, AIUsageRecord, AITaskType, AIUsageSummary
 } from './ai-response.types';
 
-export interface ClaudeClientConfig {
+export interface GeminiClientConfig {
   apiKey: string;
   model: string;
   maxRetries: number;
@@ -16,9 +16,9 @@ export interface ClaudeClientConfig {
   enableUsageTracking: boolean;
 }
 
-export const defaultClaudeConfig: ClaudeClientConfig = {
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-  model: 'claude-sonnet-4-20250514',
+export const defaultGeminiConfig: GeminiClientConfig = {
+  apiKey: process.env.GEMINI_API_KEY || '',
+  model: 'gemini-2.5-flash',
   maxRetries: 3,
   initialRetryDelayMs: 1000,
   maxRetryDelayMs: 30000,
@@ -26,17 +26,17 @@ export const defaultClaudeConfig: ClaudeClientConfig = {
   enableUsageTracking: true
 };
 
-export class ClaudeClient {
-  private client: Anthropic;
-  private config: ClaudeClientConfig;
+export class GeminiClient {
+  private client: GoogleGenAI;
+  private config: GeminiClientConfig;
   private usageHistory: AIUsageRecord[] = [];
 
-  constructor(config: Partial<ClaudeClientConfig> = {}) {
-    this.config = { ...defaultClaudeConfig, ...config };
+  constructor(config: Partial<GeminiClientConfig> = {}) {
+    this.config = { ...defaultGeminiConfig, ...config };
     if (!this.config.apiKey && process.env.NODE_ENV === 'production') {
-      throw new Error('ANTHROPIC_API_KEY is required in production');
+      throw new Error('GEMINI_API_KEY is required in production');
     }
-    this.client = new Anthropic({ apiKey: this.config.apiKey || 'dummy' });
+    this.client = new GoogleGenAI({ apiKey: this.config.apiKey || 'dummy' });
   }
 
   async complete<T>(request: AIRequest): Promise<AIResult<T>> {
@@ -55,12 +55,9 @@ export class ClaudeClient {
 
     const systemPrompt = request.systemPrompt + `\n\nCRITICAL: You must respond with ONLY valid JSON.\nNo preamble, no explanation, no markdown code blocks,\nno \`\`\`json fences. Just the raw JSON object.\nYour entire response must be parseable by JSON.parse().`;
 
-    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: request.userPrompt }];
-
     try {
-      const { response, latencyMs } = await this.executeWithRetry(systemPrompt, messages, request);
-      const textBlock = response.content.find(c => c.type === 'text');
-      let rawText = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+      const { response, latencyMs } = await this.executeWithRetry(systemPrompt, request.userPrompt, request);
+      let rawText = response.text || '';
       rawText = rawText.replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
 
       let parsed: T;
@@ -70,9 +67,9 @@ export class ClaudeClient {
         return { success: false, error: { code: AIErrorCode.JSON_PARSE_FAILED, message: 'Failed to parse JSON', retryable: false } };
       }
 
-      const inputTokens = response.usage.input_tokens;
-      const outputTokens = response.usage.output_tokens;
-      const totalTokens = inputTokens + outputTokens;
+      const inputTokens = response.usageMetadata?.promptTokenCount || 0;
+      const outputTokens = response.usageMetadata?.candidatesTokenCount || 0;
+      const totalTokens = response.usageMetadata?.totalTokenCount || 0;
       const cost = tokenCounter.estimateCost(inputTokens, outputTokens, this.config.model);
 
       const rawResp: AIRawResponse = {
@@ -81,8 +78,8 @@ export class ClaudeClient {
         inputTokens,
         outputTokens,
         totalTokens,
-        model: response.model,
-        stopReason: response.stop_reason || 'unknown',
+        model: this.config.model,
+        stopReason: response.candidates?.[0]?.finishReason || 'unknown',
         latencyMs,
         cost
       };
@@ -93,7 +90,7 @@ export class ClaudeClient {
           scanId: request.scanId,
           repoId: request.repoId,
           taskType: request.taskType,
-          model: response.model,
+          model: this.config.model,
           inputTokens,
           outputTokens,
           totalTokens,
@@ -133,25 +130,30 @@ export class ClaudeClient {
 
   private async executeWithRetry(
     systemPrompt: string,
-    messages: Anthropic.MessageParam[],
+    userPrompt: string,
     request: AIRequest,
     attemptNumber: number = 0
-  ): Promise<{ response: Anthropic.Message, latencyMs: number }> {
+  ): Promise<{ response: any, latencyMs: number }> {
     const startTime = Date.now();
     try {
-      const response = await this.client.messages.create({
+      // The Gen AI SDK uses generateContent. We can pass system parameters within config.
+      const response = await this.client.models.generateContent({
         model: this.config.model,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature,
-        system: systemPrompt,
-        messages: messages
-      }, { timeout: this.config.timeoutMs });
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: request.temperature,
+          maxOutputTokens: request.maxTokens,
+          // Require JSON output if supported by model, or just rely on the prompt.
+          // Optional: responseMimeType: "application/json"
+        }
+      });
       
       return { response, latencyMs: Date.now() - startTime };
     } catch (error: any) {
-      const status = error.status;
+      const status = error.status || error.code;
 
-      if (status === 429 || status === 500 || status === 529 || error.name === 'APIConnectionError' || error.name === 'TimeoutError' || error.name === 'AbortError') {
+      if (status === 429 || status === 500 || status === 503 || error.name === 'APIConnectionError' || error.name === 'TimeoutError' || error.name === 'AbortError') {
         if (attemptNumber >= this.config.maxRetries) {
           throw { code: status === 429 ? AIErrorCode.MAX_RETRIES_EXCEEDED : (error.name === 'TimeoutError' || error.name === 'AbortError' ? AIErrorCode.TIMEOUT : AIErrorCode.NETWORK_ERROR), message: error.message, retryable: false };
         }
@@ -168,7 +170,7 @@ export class ClaudeClient {
         const finalDelay = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
 
         await this.sleep(finalDelay);
-        return this.executeWithRetry(systemPrompt, messages, request, attemptNumber + 1);
+        return this.executeWithRetry(systemPrompt, userPrompt, request, attemptNumber + 1);
       }
 
       if (status === 400) throw { code: AIErrorCode.INVALID_RESPONSE, message: error.message, retryable: false };
@@ -270,14 +272,15 @@ export class ClaudeClient {
   async healthCheck(): Promise<{ healthy: boolean; latencyMs: number; model: string; error?: string }> {
     const startTime = Date.now();
     try {
-      const response = await this.client.messages.create({
+      const response = await this.client.models.generateContent({
         model: this.config.model,
-        max_tokens: 10,
-        messages: [{ role: 'user', content: 'Reply with the single word: OK' }]
-      }, { timeout: 10000 });
+        contents: 'Reply with the single word: OK',
+        config: {
+          maxOutputTokens: 10
+        }
+      });
       const latencyMs = Date.now() - startTime;
-      const textBlock = response.content.find(c => c.type === 'text');
-      const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+      const text = response.text || '';
       if (text.includes('OK')) {
         return { healthy: true, latencyMs, model: this.config.model };
       } else {
@@ -289,4 +292,4 @@ export class ClaudeClient {
   }
 }
 
-export const claudeClient = new ClaudeClient();
+export const geminiClient = new GeminiClient();

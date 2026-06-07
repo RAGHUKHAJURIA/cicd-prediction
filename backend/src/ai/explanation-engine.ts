@@ -1,4 +1,4 @@
-import { claudeClient, ClaudeClient } from './claude-client';
+import { geminiClient, GeminiClient } from './gemini-client';
 import { tokenCounter } from './token-counter';
 import {
   AITaskType, AIResult, FindingExplanation,
@@ -7,7 +7,7 @@ import {
 import { AIContext, AIFinding } from '../engine/report-builder';
 
 export class ExplanationEngine {
-  constructor(private client: ClaudeClient = claudeClient) {}
+  constructor(private client: GeminiClient = geminiClient) {}
 
   async explainFinding(
     finding: AIFinding,

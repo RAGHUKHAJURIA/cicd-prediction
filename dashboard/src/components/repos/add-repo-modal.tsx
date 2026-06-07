@@ -62,7 +62,7 @@ export function AddRepoModal({ open, onOpenChange }: { open: boolean; onOpenChan
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-canvas/80 backdrop-blur-sm z-50 animate-fade-in" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-canvas-subtle border border-border rounded-lg shadow-xl w-full max-w-md p-6 z-50 animate-slide-in">
+        <Dialog.Content aria-describedby={undefined} className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-canvas-subtle border border-border rounded-lg shadow-xl w-full max-w-md p-6 z-50 animate-slide-in">
           <div className="flex justify-between items-center mb-6">
             <Dialog.Title className="text-xl font-semibold text-fg">Add repository</Dialog.Title>
             <Dialog.Close className="text-fg-muted hover:text-fg transition-colors">

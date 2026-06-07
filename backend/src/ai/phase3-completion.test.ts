@@ -1,6 +1,6 @@
 import assert from 'assert';
 import { 
-  tokenCounter, claudeClient, explanationEngine, failurePredictor, 
+  tokenCounter, geminiClient, explanationEngine, failurePredictor, 
   patchBuilder, remediationGenerator, guardrail, 
   outputValidator, fallbackGenerator, aiOrchestrator, PatchType,
   AITaskType, AIResult, ValidationStatus, RemediationGenerator,
@@ -265,7 +265,7 @@ async function runTests() {
 
   // TEST 25
   assert.ok(tokenCounter !== undefined);
-  assert.ok(claudeClient !== undefined);
+  assert.ok(geminiClient !== undefined);
   assert.ok(explanationEngine !== undefined);
   assert.ok(failurePredictor !== undefined);
   assert.ok(patchBuilder !== undefined);

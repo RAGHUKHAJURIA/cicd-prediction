@@ -1,12 +1,13 @@
 'use client';
 
-import { useScan, useAIJob } from '@/lib/hooks/use-scan';
+import { useScan, useAIJob, useRepos } from '@/lib/hooks/use-scan';
 import { useParams } from 'next/navigation';
 import { Loader2, FileCode, Shield, Zap, Settings, Activity } from 'lucide-react';
 import { ScoreGauge } from '@/components/scans/score-gauge';
 import { FindingsTable } from '@/components/scans/findings-table';
 import { RiskHeatmap } from '@/components/scans/risk-heatmap';
 import { AIReportPanel } from '@/components/scans/ai-report-panel';
+import { ScanResultsShell } from '@/components/scan-results/scan-results-shell';
 import * as Tabs from '@radix-ui/react-tabs';
 import Link from 'next/link';
 
@@ -15,6 +16,8 @@ export default function ScanDetailPage() {
   const repoId = params.id as string;
   const scanId = params.scanId as string;
   const { scan, isLoading } = useScan(repoId, scanId);
+  const { repos } = useRepos();
+  const repo = repos.find(r => r.id === repoId);
 
   // We assume the AI job id is stored somehow, or we query for it. For now, we'll let AIReportPanel trigger it.
   const { job: aiJob } = useAIJob(scanId, scan?.analysisReport?.id, 'report');
@@ -134,7 +137,28 @@ export default function ScanDetailPage() {
         </Tabs.Content>
 
         <Tabs.Content value="findings" className="focus:outline-none animate-fade-in">
-          <FindingsTable findings={scan.findings?.all || []} />
+          <ScanResultsShell
+            scanId={scanId}
+            repoId={repoId}
+            repoOwner={repo?.owner ?? ''}
+            repoName={repo?.repoName ?? ''}
+            defaultBranch={repo?.defaultBranch ?? 'main'}
+            patches={
+              aiJob?.remediationReport?.remediations?.map((r) => ({
+                id: r.findingId,
+                ruleId: r.title ?? null,
+                title: r.title ?? '',
+                beforeCode: r.patch?.before ?? null,
+                afterCode: r.patch?.after ?? null,
+                language: null,
+                instructions: null,
+                filePath: undefined,
+                safe: r.validationStatus === 'valid' ? true : null,
+              })) ?? []
+            }
+          >
+            <FindingsTable findings={scan.findings?.all || []} />
+          </ScanResultsShell>
         </Tabs.Content>
 
         <Tabs.Content value="heatmap" className="focus:outline-none animate-fade-in">

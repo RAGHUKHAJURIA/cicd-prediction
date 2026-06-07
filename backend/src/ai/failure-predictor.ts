@@ -1,11 +1,11 @@
-import { claudeClient, ClaudeClient } from './claude-client';
+import { geminiClient, GeminiClient } from './gemini-client';
 import {
   AITaskType, AIResult, FailurePrediction, SingleFailurePrediction
 } from './ai-response.types';
 import { AIContext, AIFinding } from '../engine/report-builder';
 
 export class FailurePredictor {
-  constructor(private client: ClaudeClient = claudeClient) {}
+  constructor(private client: GeminiClient = geminiClient) {}
 
   async predictFailures(
     aiContext: AIContext,

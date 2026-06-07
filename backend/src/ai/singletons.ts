@@ -1,5 +1,5 @@
 import { tokenCounter } from './token-counter';
-import { claudeClient } from './claude-client';
+import { geminiClient } from './gemini-client';
 import { explanationEngine } from './explanation-engine';
 import { failurePredictor } from './failure-predictor';
 import { patchBuilder } from './patch-builder';
@@ -11,7 +11,7 @@ import { aiOrchestrator } from './ai-orchestrator';
 
 export {
   tokenCounter,
-  claudeClient,
+  geminiClient,
   explanationEngine,
   failurePredictor,
   patchBuilder,
