@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/auth.middleware";
 import { createRateLimiter } from "../middleware/rate-limiter";
 import { validate } from "../middleware/validate";
 import { AppError } from "../middleware/error-handler";
+import { sendWelcomeEmail } from "../lib/mailer";
 
 export const authRoutes = Router();
 
@@ -54,6 +55,13 @@ authRoutes.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await authService.register(req.body);
+
+      // Fire-and-forget: send welcome email (never blocks the response)
+      sendWelcomeEmail({
+        to: result.email,
+        username: result.username,
+        provider: "local",
+      });
 
       res.status(201).json({
         success: true,

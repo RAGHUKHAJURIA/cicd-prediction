@@ -5,6 +5,7 @@ import { users } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { encryptToken } from "../lib/tokenCrypto";
 import { AppError } from "../middleware/error-handler";
+import { sendWelcomeEmail } from "../lib/mailer";
 
 export const githubAuthRouter = Router();
 
@@ -255,6 +256,15 @@ githubAuthRouter.get(
             .returning();
             
           loggedInUser = inserted || null;
+
+          // Fire-and-forget: send welcome email for new GitHub user
+          if (loggedInUser) {
+            sendWelcomeEmail({
+              to: loggedInUser.email,
+              username: loggedInUser.username,
+              provider: "github",
+            });
+          }
         }
       }
       

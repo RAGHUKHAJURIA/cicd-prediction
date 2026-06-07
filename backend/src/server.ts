@@ -16,6 +16,11 @@ async function bootstrap(): Promise<void> {
     process.exit(1);
   }
 
+  // Warn (non-fatal) if email credentials are missing
+  if (!process.env["RESEND_API_KEY"]) {
+    console.warn("[server] ⚠  RESEND_API_KEY is not set — registration emails will be skipped.");
+  }
+
   const app = createApp();
   const server = http.createServer(app);
 
