@@ -1,4 +1,3 @@
-import { App } from '@octokit/app';
 import { Octokit } from '@octokit/rest';
 import crypto from 'crypto';
 import { CacheClient } from '../cache/cache.client';
@@ -12,26 +11,50 @@ export interface GitHubAppConfig {
 }
 
 export class GitHubAppAuth {
-  private app: App;
+  private app: any;
+  private appPromise: Promise<any> | null;
   private cache: CacheClient;
+  private configured: boolean;
 
   constructor(config: GitHubAppConfig) {
-    this.app = new App({
-      appId: config.appId,
-      privateKey: config.privateKey,
-      webhooks: {
-        secret: config.webhookSecret,
-      },
-      oauth: {
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-      },
-    });
+    this.configured = Boolean(config.appId && config.privateKey);
     this.cache = new CacheClient('github-app:');
+
+    if (this.configured) {
+      // Lazy-load @octokit/app (ESM-only) via dynamic import()
+      this.appPromise = import('@octokit/app').then(({ App }) => {
+        this.app = new App({
+          appId: config.appId,
+          privateKey: config.privateKey,
+          webhooks: {
+            secret: config.webhookSecret,
+          },
+          oauth: {
+            clientId: config.clientId,
+            clientSecret: config.clientSecret,
+          },
+        });
+        return this.app;
+      }).catch((err) => {
+        console.warn('[GitHubAppAuth] Failed to initialize @octokit/app:', err.message);
+        this.configured = false;
+        return null;
+      });
+    } else {
+      this.appPromise = null;
+      console.warn('[GitHubAppAuth] GitHub App not configured — GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY env vars missing.');
+    }
+  }
+
+  private async getApp(): Promise<any> {
+    if (!this.configured) return null;
+    if (this.app) return this.app;
+    return this.appPromise;
   }
 
   async getInstallationOctokit(installationId: number): Promise<Octokit> {
-    const octokit = await this.app.getInstallationOctokit(installationId);
+    const app = await this.getApp();
+    const octokit = await app.getInstallationOctokit(installationId);
     return octokit as unknown as Octokit; // the types between @octokit/app and @octokit/rest are sometimes slightly mismatched, but they work
   }
 
@@ -41,7 +64,8 @@ export class GitHubAppAuth {
 
     if (!installationId) {
       try {
-        const { data } = await this.app.octokit.request("GET /repos/{owner}/{repo}/installation", {
+        const app = await this.getApp();
+        const { data } = await app.octokit.request("GET /repos/{owner}/{repo}/installation", {
           owner,
           repo,
         });
@@ -59,8 +83,9 @@ export class GitHubAppAuth {
     return { installationId, octokit };
   }
 
-  generateJWT(): string {
-    return this.app.getSignedJsonWebToken();
+  async generateJWT(): Promise<string> {
+    const app = await this.getApp();
+    return app.getSignedJsonWebToken();
   }
 
   async verifyWebhookSignature(payload: string, signature: string): Promise<boolean> {

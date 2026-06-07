@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShieldCheck, LayoutDashboard, GitBranch, Activity, Settings, Plus, ExternalLink } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, GitBranch, Activity, Settings, Plus, ExternalLink, Search } from 'lucide-react';
 import { useRepos, useQueueStats } from '@/lib/hooks/use-scan';
 import clsx from 'clsx';
 import { differenceInHours } from 'date-fns';
@@ -16,7 +16,7 @@ export function Sidebar() {
 
   const links = [
     { name: 'Home', href: '/', icon: LayoutDashboard },
-    { name: 'Analyze URL', href: '/analyze', icon: ShieldCheck, badge: 'New' },
+    { name: 'Analyze', href: '/analyze', icon: Search, badge: 'Free' },
     { name: 'Repositories', href: '/repos', icon: GitBranch },
     { name: 'Queue', href: '/queue', icon: Activity, badge: activeJobsCount > 0 ? activeJobsCount : null },
     { name: 'Settings', href: '/settings', icon: Settings },

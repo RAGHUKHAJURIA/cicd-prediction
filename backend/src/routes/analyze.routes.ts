@@ -2,22 +2,39 @@ import { Router, Request, Response, NextFunction, RequestHandler } from "express
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { db } from "../db/client";
-import { scans } from "../db/schema";
+import { scans, repos } from "../db/schema";
 import { validate, validateParams } from "../middleware/validate";
 import { AppError } from "../middleware/error-handler";
 import { createRateLimiter } from "../middleware/rate-limiter";
 import { publicAnalyzer } from "../services/public-analyzer";
 import { successResponse } from "../utils/response";
+import { optionalAuth } from "../middleware/auth.middleware";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
-// 10 scans per hour rate limiter
-const scanRateLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10,
-  keyPrefix: "scan",
-  message: "Rate limit exceeded. You can perform up to 10 repository scans per hour.",
+const authedRateLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  keyPrefix: "scan:auth",
+  keyGenerator: (req) => req.currentUser?.id || req.ip || "unknown",
+  message: "Rate limit exceeded. Logged-in users can perform up to 30 scans per hour.",
 });
+
+const guestRateLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyPrefix: "scan:guest",
+  message: "Rate limit exceeded. Guests can perform up to 5 repository scans per hour.",
+});
+
+const dynamicRateLimiter = (req: Request, res: Response, next: NextFunction) => {
+  if (req.currentUser) {
+    return authedRateLimiter(req, res, next);
+  } else {
+    return guestRateLimiter(req, res, next);
+  }
+};
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +100,14 @@ const analyzeRepo: RequestHandler = async (
       provider,
       branch
     );
+
+    // If logged in and repo has no owner, associate it
+    if (req.currentUser && !repo.userId) {
+      await db
+        .update(repos)
+        .set({ userId: req.currentUser.id, updatedAt: new Date() })
+        .where(eq(repos.id, repo.id));
+    }
 
     // 2. Ephemerally store temporary token in Redis if provided
     if (token) {
@@ -164,7 +189,7 @@ const getScanResults: RequestHandler = async (
 
 // ─── Register routes ──────────────────────────────────────────────────────────
 
-router.post("/", scanRateLimiter, validate(analyzeRequestSchema), analyzeRepo);
+router.post("/", optionalAuth, dynamicRateLimiter, validate(analyzeRequestSchema), analyzeRepo);
 router.get("/:scanId/status", validateParams(scanIdParams), getScanStatus);
 router.get("/:scanId/results", validateParams(scanIdParams), getScanResults);
 

@@ -8,10 +8,6 @@ export default defineConfig({
     testTimeout: 15000,
     // Use tsx (already installed) as the transform runner for CJS projects
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        execArgv: ['--import', 'tsx/esm'],
-      },
-    },
+    execArgv: ['--import', 'tsx/esm'],
   },
 });

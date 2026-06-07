@@ -8,6 +8,7 @@ import { validate, validateParams, validateQuery } from "../middleware/validate"
 import { NotFoundError, AppError } from "../middleware/error-handler";
 import { successResponse } from "../utils/response";
 import { GitHubClient, GitLabClient } from "../utils/github.client";
+import { requireAuth, requireRepoOwner } from "../middleware/auth.middleware";
 
 const router = Router();
 
@@ -162,6 +163,7 @@ const registerRepo: RequestHandler = async (
       createdAt: now,
       updatedAt: now,
       totalScans: 0,
+      userId: req.currentUser ? req.currentUser.id : null,
     });
 
     const [inserted] = await db
@@ -206,6 +208,10 @@ const listRepos: RequestHandler = async (
           ilike(repos.repoUrl, `%${q.search}%`)
         )
       );
+    }
+
+    if (req.currentUser && req.currentUser.role !== "admin") {
+      conditions.push(eq(repos.userId, req.currentUser.id));
     }
 
     const whereClause =
@@ -376,30 +382,38 @@ const updateRepo: RequestHandler = async (
 
 router.post(
   "/",
+  requireAuth,
   validate(registerSchema),
   registerRepo
 );
 
 router.get(
   "/",
+  requireAuth,
   validateQuery(listQuerySchema),
   listRepos
 );
 
 router.get(
   "/:id",
+  requireAuth,
+  requireRepoOwner,
   validateParams(uuidParams),
   getRepo
 );
 
 router.delete(
   "/:id",
+  requireAuth,
+  requireRepoOwner,
   validateParams(uuidParams),
   deleteRepo
 );
 
 router.patch(
   "/:id",
+  requireAuth,
+  requireRepoOwner,
   validateParams(uuidParams),
   validate(patchSchema),
   updateRepo

@@ -7,6 +7,7 @@ import {
   jsonb,
   uuid,
   pgEnum,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -67,6 +68,9 @@ export const repos = pgTable("repos", {
     .defaultNow(),
   lastScannedAt: timestamp("last_scanned_at", { withTimezone: true }),
   totalScans: integer("total_scans").notNull().default(0),
+  userId: uuid("user_id").references(() => users.id, {
+    onDelete: "cascade",
+  }),
 });
 
 export type RepoRow = typeof repos.$inferSelect;
@@ -231,3 +235,27 @@ export const analysisReports = pgTable("analysis_reports", {
 
 export type WorkflowRow = typeof workflows.$inferSelect;
 export type NewWorkflowRow = typeof workflows.$inferInsert;
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: varchar("email", { length: 255 }).unique().notNull(),
+  password: varchar("password", { length: 255 }),
+  username: varchar("username", { length: 100 }).notNull(),
+  role: varchar("role", { length: 20 }).notNull().default("user"),
+  githubId: varchar("github_id", { length: 255 }).unique(),
+  githubUsername: varchar("github_username", { length: 255 }),
+  githubAccessToken: text("github_access_token"),
+  avatarUrl: varchar("avatar_url", { length: 500 }),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type UserRow = typeof users.$inferSelect;
+export type NewUserRow = typeof users.$inferInsert;
+

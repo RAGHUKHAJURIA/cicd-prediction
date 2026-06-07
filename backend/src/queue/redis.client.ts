@@ -1,5 +1,8 @@
 import Redis, { RedisOptions } from 'ioredis'
 
+// Track whether we've already logged the "Redis unavailable" warning
+let redisUnavailableLogged = false
+
 export const redisConfig: RedisOptions = {
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
@@ -14,15 +17,18 @@ export const redisConfig: RedisOptions = {
   enableReadyCheck: false,
   lazyConnect: true,
   retryStrategy: (times: number): number | null => {
-    if (times >= 10) {
-      console.error(JSON.stringify({
-        event: 'redis_retry_exhausted',
-        attempts: times,
-        timestamp: new Date().toISOString()
-      }))
+    if (times >= 3) {
+      if (!redisUnavailableLogged) {
+        redisUnavailableLogged = true
+        console.warn(
+          `[Redis] Could not connect to Redis at ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || '6379'} after ${times} attempts. ` +
+          `Queue features (scan-queue, analysis-queue, ai-queue) will be unavailable. ` +
+          `To fix: install and start Redis, or run 'docker run -d --name redis -p 6379:6379 redis:7-alpine'.`
+        )
+      }
       return null
     }
-    return Math.min(50 * Math.pow(2, times), 3000)
+    return Math.min(50 * Math.pow(2, times), 2000)
   },
   reconnectOnError: (err: Error): boolean => {
     const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT']
@@ -34,6 +40,7 @@ export function createRedisConnection(name: string): Redis {
   const connection = new Redis(redisConfig)
 
   connection.on('connect', () => {
+    redisUnavailableLogged = false // Reset on successful connect
     console.log(JSON.stringify({
       event: 'redis_connected',
       connection: name,
@@ -51,30 +58,29 @@ export function createRedisConnection(name: string): Redis {
     }))
   })
 
-  connection.on('error', (err: Error) => {
-    console.error(JSON.stringify({
-      event: 'redis_error',
-      connection: name,
-      error: err.message,
-      timestamp: new Date().toISOString()
-    }))
+  // Suppress verbose AggregateError stack traces — log one-liner only
+  connection.on('error', (_err: Error) => {
+    // Only log if we haven't already warned about Redis being unavailable
+    if (!redisUnavailableLogged) {
+      // Will be logged by retryStrategy when max retries hit
+    }
+    // Silently swallow — prevents unhandled error crash and console spam
   })
 
   connection.on('close', () => {
-    console.log(JSON.stringify({
-      event: 'redis_closed',
-      connection: name,
-      timestamp: new Date().toISOString()
-    }))
+    // Only log if Redis was previously connected (not on initial failure)
+    if (!redisUnavailableLogged) {
+      console.log(JSON.stringify({
+        event: 'redis_closed',
+        connection: name,
+        timestamp: new Date().toISOString()
+      }))
+    }
   })
 
-  connection.on('reconnecting', (delay: number) => {
-    console.log(JSON.stringify({
-      event: 'redis_reconnecting',
-      connection: name,
-      delayMs: delay,
-      timestamp: new Date().toISOString()
-    }))
+  // Suppress reconnecting logs when Redis is known to be down
+  connection.on('reconnecting', (_delay: number) => {
+    // Silenced — retryStrategy handles the warning
   })
 
   return connection

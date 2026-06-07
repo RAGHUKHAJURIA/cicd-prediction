@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
+import { motion } from "framer-motion";
 import { ScrollFillText } from "@/components/scroll-fill-text";
 import { GithubHeatmapBg } from "@/components/github-heatmap-bg";
 import { ArchitectureMap } from "@/components/architecture-map";
@@ -14,36 +14,8 @@ import {
   Sparkles,
   Home as HomeIcon,
 } from "lucide-react";
-import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { useRepos } from "@/lib/hooks/use-scan";
 
-// Animated Counter Component
 export default function Home() {
-  const { repos, isLoading } = useRepos();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!isLoading) {
-      if (repos && repos.length > 0) {
-        router.push("/repos");
-      } else {
-        router.push("/analyze");
-      }
-    }
-  }, [repos, isLoading, router]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-center space-y-4">
-        <div className="relative flex items-center justify-center">
-          <div className="h-12 w-12 rounded-full border-2 border-success border-t-transparent animate-spin" />
-        </div>
-        <p className="text-xs text-fg-muted">Checking repository status...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen text-gray-50 selection:bg-success/30 selection:text-white bg-black">
       {/* Navigation */}

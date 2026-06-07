@@ -113,8 +113,8 @@ export default function ReposPage() {
             href="/analyze"
             className="flex items-center gap-2 px-4 py-1.5 border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.02] hover:bg-white/[0.04] text-fg-muted hover:text-fg rounded-md text-sm font-medium transition-colors shadow-sm"
           >
-            <Sparkles className="w-4 h-4 text-accent animate-pulse-slow" />
-            Quick Analyze
+            <Search className="w-4 h-4" />
+            Analyze any repo
           </Link>
           <button 
             onClick={() => setIsAddModalOpen(true)}

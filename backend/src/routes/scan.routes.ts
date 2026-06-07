@@ -7,6 +7,7 @@ import { repos, scans, parsedArtifacts, findings } from '../db/schema'
 import { validateParams, validateQuery } from '../middleware/validate'
 import { AppError, BadRequestError, NotFoundError } from '../middleware/error-handler'
 import { successResponse } from '../utils/response'
+import { requireAuth, requireRepoOwner } from '../middleware/auth.middleware'
 import {
   enqueueScan,
   enqueueRescan
@@ -498,36 +499,48 @@ const rerunScan: RequestHandler = async (
 
 router.post(
   '/:id/scan',
+  requireAuth,
+  requireRepoOwner,
   validateParams(repoIdParam),
   triggerScan
 )
 
 router.post(
   '/:id/rescan',
+  requireAuth,
+  requireRepoOwner,
   validateParams(repoIdParam),
   rescan
 )
 
 router.get(
   '/:id/scans/latest',
+  requireAuth,
+  requireRepoOwner,
   validateParams(repoIdParam),
   getLatestScan
 )
 
 router.get(
   '/:id/scans/:scanId',
+  requireAuth,
+  requireRepoOwner,
   validateParams(repoAndScanParams),
   getScan
 )
 
 router.post(
   '/:id/scans/:scanId/rerun',
+  requireAuth,
+  requireRepoOwner,
   validateParams(repoAndScanParams),
   rerunScan
 )
 
 router.get(
   '/:id/scans',
+  requireAuth,
+  requireRepoOwner,
   validateParams(repoIdParam),
   validateQuery(listScansQuerySchema),
   listScans

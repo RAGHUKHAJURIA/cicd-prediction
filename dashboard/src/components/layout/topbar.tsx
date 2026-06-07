@@ -6,8 +6,11 @@ import Link from 'next/link';
 import clsx from 'clsx';
 import { useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/lib/hooks/use-auth';
+import { UserMenu } from '@/components/auth/user-menu';
 
 export function Topbar() {
+  const { user, isLoading } = useAuth();
   const pathname = usePathname();
   const segments = pathname.split('/').filter(Boolean);
   const [isScanning, setIsScanning] = useState(false);
@@ -106,6 +109,19 @@ export function Topbar() {
             {/* Mock notification dot */}
             <span className="absolute top-2.5 right-2.5 h-1.5 w-1.5 bg-accent rounded-full border border-canvas-subtle" />
           </button>
+
+          {isLoading ? (
+            <div className="h-8 w-8 rounded-full bg-white/[0.04] animate-pulse" />
+          ) : user ? (
+            <UserMenu />
+          ) : (
+            <Link
+              href="/login"
+              className="px-4 py-1.5 rounded-full text-sm font-semibold bg-white/[0.06] hover:bg-white/[0.1] text-fg border border-white/10 transition-all cursor-pointer"
+            >
+              Sign in
+            </Link>
+          )}
         </div>
       </div>
     </div>

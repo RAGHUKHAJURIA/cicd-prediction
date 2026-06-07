@@ -16,6 +16,10 @@ import { metricsService } from "./monitoring/metrics.service";
 import { githubAppRouter } from "./routes/github-app.routes";
 import { integrationsRouter } from "./routes/integrations.routes";
 import analyzeRoutes from "./routes/analyze.routes";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db/pool";
+import { authRoutes } from "./routes/auth.routes";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -52,10 +56,10 @@ export function createApp(): Application {
   // ── CORS ───────────────────────────────────────────────────────────────────
   app.use(
     cors({
-      origin:
-        process.env["NODE_ENV"] === "production"
-          ? (process.env["CORS_ORIGIN"] ?? false)
-          : "*",
+      origin: (_origin, callback) => {
+        callback(null, true);
+      },
+      credentials: true,
       methods: ["GET", "POST", "PATCH", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization"],
     })
@@ -67,6 +71,31 @@ export function createApp(): Application {
   // ── Body parsing (after webhook route) ────────────────────────────────────
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true }));
+
+  const PgSession = connectPgSimple(session);
+
+  app.use(
+    session({
+      store: new PgSession({
+        pool,
+        tableName: "session",
+        ttl: 7 * 24 * 60 * 60,
+        pruneSessionInterval: 60 * 60,
+      }),
+      name: "cicd.sid",
+      secret: process.env["SESSION_SECRET"]!,
+      resave: false,
+      saveUninitialized: false,
+      rolling: true,
+      cookie: {
+        httpOnly: true,
+        secure: process.env["NODE_ENV"] === "production",
+        sameSite: "lax" as const,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: "/",
+      },
+    })
+  );
 
   // ── Request logging (assigns requestId + logs on finish) ──────────────────
   app.use(requestLogger);
@@ -112,6 +141,8 @@ export function createApp(): Application {
   });
 
   // ── Routes ────────────────────────────────────────────────────────────────
+  app.use("/auth", authRoutes);
+  app.use("/api/auth", authRoutes);
   app.use("/api/repos", repoRoutes);
   app.use("/api/repos", scanRoutes);
   app.use("/api/jobs", jobRoutes);
