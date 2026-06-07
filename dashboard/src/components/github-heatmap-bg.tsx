@@ -21,7 +21,7 @@ function pickColor(): string {
   return COLORS[0];
 }
 
-export function GithubHeatmapBg() {
+export function GithubHeatmapBg({ fullScreen = false }: { fullScreen?: boolean } = {}) {
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -136,8 +136,8 @@ export function GithubHeatmapBg() {
         background: "#0d1117",
         transform: "translate3d(0, 0, 0)",
         willChange: "transform",
-        WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 0px, rgba(0,0,0,1) 620px, rgba(0,0,0,0) 760px)",
-        maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 0px, rgba(0,0,0,1) 620px, rgba(0,0,0,0) 760px)",
+        WebkitMaskImage: fullScreen ? "none" : "linear-gradient(to bottom, rgba(0,0,0,1) 0px, rgba(0,0,0,1) 620px, rgba(0,0,0,0) 760px)",
+        maskImage: fullScreen ? "none" : "linear-gradient(to bottom, rgba(0,0,0,1) 0px, rgba(0,0,0,1) 620px, rgba(0,0,0,0) 760px)",
       }}
     />
   );

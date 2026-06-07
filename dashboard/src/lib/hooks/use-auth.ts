@@ -1,59 +1,55 @@
-"use client";
+'use client'
 
-import useSWR from "swr";
-import { useRouter } from "next/navigation";
-import { authApi, AuthUser } from "../auth-api";
+import useSWR from 'swr'
+import { useRouter } from 'next/navigation'
+import { authApi } from '../auth-api'
+import type { AuthUser, RegisterResult } from '../auth-api'
 
 export function useAuth() {
-  const router = useRouter();
+  const router = useRouter()
 
   const { data: user, isLoading, mutate } = useSWR<AuthUser | null>(
-    "/auth/me",
+    'auth-me',
     () => authApi.getMe(),
     {
-      revalidateOnFocus: true, // re-check session when user switches back to tab
+      revalidateOnFocus: true,
       revalidateOnReconnect: true,
-      dedupingInterval: 30000, // don't re-fetch more than once per 30 seconds
+      dedupingInterval: 30000,
+      onError: () => null,
     }
-  );
+  )
 
-  const login = async (email: string, password: string) => {
-    await authApi.login({ email, password });
-    await mutate();
-    
-    // Check if there is a redirect path
-    const params = new URLSearchParams(window.location.search);
-    const fromPath = params.get("from");
-    router.push(fromPath || "/repos");
-  };
+  const login = async (email: string, password: string): Promise<void> => {
+    await authApi.login({ email, password })
+    await mutate()
+    const params = new URLSearchParams(window.location.search)
+    const from = params.get('from') || '/repos'
+    router.push(from)
+  }
 
-  const logout = async () => {
-    await authApi.logout();
-    await mutate(null, false); // clear user from cache immediately without revalidation
-    router.push("/login");
-  };
+  const logout = async (): Promise<void> => {
+    await authApi.logout()
+    mutate(null, { revalidate: false })
+    router.push('/login')
+  }
 
   const register = async (data: {
-    email: string;
-    password: string;
-    username: string;
-  }) => {
-    await authApi.register(data);
-    await mutate();
-    router.push("/repos");
-  };
-
-  const isAuthenticated = user !== null && user !== undefined;
-  const isAdmin = user?.role === "admin";
+    email: string
+    password: string
+    username: string
+  }): Promise<RegisterResult> => {
+    const result = await authApi.register(data)
+    return result
+  }
 
   return {
     user: user ?? null,
     isLoading,
-    isAuthenticated,
-    isAdmin,
+    isAuthenticated: !!user,
+    isAdmin: user?.role === 'admin',
     login,
     logout,
     register,
     mutate,
-  };
+  }
 }

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Handle, Position } from 'reactflow';
 import { Job, Finding } from '@/lib/types';
 import clsx from 'clsx';

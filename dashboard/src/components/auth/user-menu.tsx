@@ -42,12 +42,12 @@ export function UserMenu() {
         <img
           src={user.avatarUrl}
           alt={user.username}
-          className="h-6 w-6 rounded-full object-cover border border-[#30363d]"
+          className="h-6 w-6 rounded-full object-cover border border-white/20"
         />
       );
     }
     return (
-      <div className="h-6 w-6 rounded-full bg-[#1f6feb] flex items-center justify-center text-xs font-semibold text-white">
+      <div className="h-6 w-6 rounded-full bg-gradient-to-br from-success to-success/60 flex items-center justify-center text-[10px] font-black text-white shadow-inner">
         {getInitials(user.username)}
       </div>
     );
@@ -56,29 +56,34 @@ export function UserMenu() {
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <button className="h-8 px-2 flex items-center gap-1.5 rounded-md hover:bg-[#21262d] border border-transparent hover:border-[#30363d] text-[#c9d1d9] hover:text-[#f0f6fc] transition-all cursor-pointer">
+        <button className="h-9 px-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] backdrop-blur-xl text-white hover:border-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
           <AvatarImage />
-          <span className="text-xs font-medium max-w-[80px] truncate">
+          <span className="text-xs font-bold max-w-[80px] truncate">
             {user.username}
           </span>
-          <ChevronDown className="h-3.5 w-3.5 text-[#8b949e]" />
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
         </button>
       </Popover.Trigger>
 
       <Popover.Portal>
         <Popover.Content
           align="end"
-          sideOffset={8}
-          className="w-[220px] bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl py-1 z-50 text-sm overflow-hidden"
+          sideOffset={12}
+          className="w-[240px] border border-white/10 rounded-2xl shadow-[0_24px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.12)] py-1.5 z-50 text-sm overflow-hidden"
+          style={{
+            background: "linear-gradient(135deg, rgba(15, 22, 33, 0.45) 0%, rgba(8, 12, 18, 0.55) 100%)",
+            backdropFilter: "blur(28px)",
+            WebkitBackdropFilter: "blur(28px)",
+          }}
         >
           {/* Header */}
-          <div className="px-3 py-2 flex items-center gap-2 border-b border-[#30363d]">
+          <div className="px-4 py-3 flex items-center gap-2 border-b border-white/10">
             <AvatarImage />
             <div className="flex flex-col min-w-0">
-              <span className="font-semibold text-[#f0f6fc] truncate leading-tight">
+              <span className="font-extrabold text-white truncate leading-tight">
                 {user.username}
               </span>
-              <span className="text-xs text-[#8b949e] truncate leading-tight mt-0.5">
+              <span className="text-[11px] text-gray-400 truncate leading-tight mt-0.5">
                 {user.email}
               </span>
             </div>
@@ -88,35 +93,35 @@ export function UserMenu() {
           <div className="flex flex-col py-1">
             <Link
               href="/settings/profile"
-              className="flex items-center gap-2 px-3 py-2 text-[#c9d1d9] hover:text-[#f0f6fc] hover:bg-white/[0.05] transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.06] transition-colors text-xs font-medium"
             >
-              <User className="h-4 w-4 text-[#8b949e]" />
+              <User className="h-4 w-4 text-gray-400" />
               <span>Profile</span>
             </Link>
             
             <Link
               href="/settings/security"
-              className="flex items-center gap-2 px-3 py-2 text-[#c9d1d9] hover:text-[#f0f6fc] hover:bg-white/[0.05] transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.06] transition-colors text-xs font-medium"
             >
-              <Lock className="h-4 w-4 text-[#8b949e]" />
+              <Lock className="h-4 w-4 text-gray-400" />
               <span>Change password</span>
             </Link>
 
             <Link
               href="/settings/integrations"
-              className="flex items-center gap-2 px-3 py-2 text-[#c9d1d9] hover:text-[#f0f6fc] hover:bg-white/[0.05] transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.06] transition-colors text-xs font-medium"
             >
-              <Github className="h-4 w-4 text-[#8b949e]" />
+              <Github className="h-4 w-4 text-gray-400" />
               <span>Connect GitHub</span>
             </Link>
 
-            <div className="border-t border-[#30363d] my-1" />
+            <div className="border-t border-white/10 my-1" />
 
             <button
               onClick={() => logout()}
-              className="flex items-center gap-2 w-full text-left px-3 py-2 text-[#f85149] hover:bg-white/[0.05] transition-colors cursor-pointer"
+              className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-danger hover:bg-danger/10 hover:text-danger transition-colors cursor-pointer text-xs font-semibold"
             >
-              <LogOut className="h-4 w-4 text-[#f85149]" />
+              <LogOut className="h-4 w-4 text-danger" />
               <span>Sign out</span>
             </button>
           </div>

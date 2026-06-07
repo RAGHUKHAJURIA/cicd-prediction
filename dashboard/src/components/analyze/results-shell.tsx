@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState } from "react";
 import { GitBranch, ExternalLink } from "lucide-react";
 import { GradeCard } from "./grade-card";

@@ -7,6 +7,8 @@ import { GithubHeatmapBg } from "@/components/github-heatmap-bg";
 import { ArchitectureMap } from "@/components/architecture-map";
 import { HowItWorks } from "@/components/how-it-works";
 import { IntegrateYourWay } from "@/components/integrate-your-way";
+import { useAuth } from "@/lib/hooks/use-auth";
+import { UserMenu } from "@/components/auth/user-menu";
 import {
   ArrowRight,
   ShieldAlert,
@@ -16,6 +18,8 @@ import {
 } from "lucide-react";
 
 export default function Home() {
+  const { user } = useAuth();
+
   return (
     <div className="min-h-screen text-gray-50 selection:bg-success/30 selection:text-white bg-black">
       {/* Navigation */}
@@ -41,11 +45,9 @@ export default function Home() {
               <span>Home</span>
             </Link>
             {[
-              { name: "Platform", href: "#" },
               { name: "Use Cases", href: "#" },
-              { name: "Solutions", href: "#", badge: "NEW" },
-              { name: "Pricing", href: "#" },
-              { name: "Docs", href: "#" },
+              { name: "Docs", href: "/docs" },
+              { name: "Dashboard", href: user ? "/repos" : "/login" },
             ].map((item, i) => (
               <Link
                 key={i}
@@ -53,34 +55,37 @@ export default function Home() {
                 className="px-3 py-1 rounded-full text-[11px] font-semibold text-gray-400 hover:text-white transition-colors flex items-center gap-1"
               >
                 <span>{item.name}</span>
-                {item.badge && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black tracking-wider bg-success/15 text-success border border-success/25 scale-90">
-                    {item.badge}
-                  </span>
-                )}
               </Link>
             ))}
           </div>
 
           {/* Right: Actions */}
           <div className="flex items-center gap-3">
-            <button className="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold text-gray-400 hover:text-white border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.02] transition-colors">
-              <Globe className="w-3.5 h-3.5" />
-              <span>English</span>
-            </button>
             <Link
-              href="/repos"
-              className="text-[11px] font-bold text-gray-400 hover:text-white transition-colors px-2"
+              href={user ? "/repos" : "/login"}
+              className="hidden sm:flex items-center justify-center h-9 px-4 rounded-full text-[11px] font-bold text-gray-400 hover:text-white border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.02] hover:bg-white/[0.06] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
             >
-              Dashboard
+              <span>Repos</span>
             </Link>
-            <Link
-              href="/repos"
-              className="px-4 py-1.5 rounded-full font-sans font-bold text-white text-[11px] bg-success hover:bg-success-muted shadow-glow-success hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center gap-1"
-            >
-              <span>Get Started</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            {user ? (
+              <UserMenu />
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="text-[11px] font-bold text-gray-400 hover:text-white transition-colors px-2"
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/register"
+                  className="px-4 py-1.5 rounded-full font-sans font-bold text-white text-[11px] bg-success hover:bg-success-muted shadow-glow-success hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center gap-1"
+                >
+                  <span>Sign Up</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </>
+            )}
           </div>
         </nav>
       </div>
@@ -140,7 +145,7 @@ export default function Home() {
               className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8"
             >
               <Link
-                href="/repos"
+                href={user ? "/repos" : "/login"}
                 className="px-6 py-3 rounded-lg font-sans font-semibold text-white text-sm bg-success hover:bg-success-muted shadow-glow-success hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center gap-2 w-full sm:w-auto justify-center"
               >
                 Scan Your First Repo Free

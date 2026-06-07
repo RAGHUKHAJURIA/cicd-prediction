@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata = {
@@ -5,5 +6,9 @@ export const metadata = {
 };
 
 export default function LoginPage() {
-  return <LoginForm />;
+  return (
+    <Suspense fallback={<div className="text-center py-4 text-sm text-[#8b949e]">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
+  );
 }

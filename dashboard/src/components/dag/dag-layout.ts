@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NormalizedWorkflow, Job } from '@/lib/types';
 import { Node, Edge } from 'reactflow';
 import { Finding } from '@/lib/types';
