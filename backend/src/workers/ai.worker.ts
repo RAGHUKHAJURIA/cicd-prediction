@@ -7,8 +7,7 @@ import type {
   ExplainFindingJobPayload,
   PredictFailuresJobPayload,
   GenerateRemediationsJobPayload,
-  FullAIReportJobPayload,
-  AIJobProgress
+  FullAIReportJobPayload
 } from '../queue/job.types'
 import { AIOrchestrator } from '../ai/ai-orchestrator'
 import { db } from '../db/client'
@@ -142,9 +141,7 @@ export class AIWorker {
       .set({ status: 'running', updatedAt: new Date() })
       .where(eq(scans.id, scanId))
 
-    await this.updateProgress(job, {
-      phase: 'explaining', percentComplete: 10
-    } as AIJobProgress)
+    await this.updateProgress(job, 10)
 
     let aiContext: AIContext
     try {
@@ -162,9 +159,7 @@ export class AIWorker {
       new Map()
     )
 
-    await this.updateProgress(job, {
-      phase: 'predicting', percentComplete: 70
-    } as AIJobProgress)
+    await this.updateProgress(job, 40)
 
     await Promise.all([
       db.delete(aiExplanations).where(eq(aiExplanations.scanId, scanId)),
@@ -187,6 +182,8 @@ export class AIWorker {
       )
     }
 
+    await this.updateProgress(job, 70)
+
     if (fullReport.remediationReport?.remediations?.length) {
       await db.insert(aiRemediations).values(
         fullReport.remediationReport.remediations.map((r: any) => ({
@@ -206,6 +203,8 @@ export class AIWorker {
       )
     }
 
+    await this.updateProgress(job, 90)
+
     if (fullReport.failurePrediction?.predictions?.length) {
       await db.insert(aiPredictions).values(
         fullReport.failurePrediction.predictions.map((p: any) => ({
@@ -223,10 +222,6 @@ export class AIWorker {
       )
     }
 
-    await this.updateProgress(job, {
-      phase: 'validating', percentComplete: 90
-    } as AIJobProgress)
-
     await db.update(scans)
       .set({
         status:              'completed',
@@ -235,9 +230,7 @@ export class AIWorker {
       })
       .where(eq(scans.id, scanId))
 
-    await this.updateProgress(job, {
-      phase: 'validating', percentComplete: 100
-    } as AIJobProgress)
+    await this.updateProgress(job, 100)
 
     const result: AIPipelineResult = {
       scanId,
@@ -341,11 +334,11 @@ export class AIWorker {
 
   private async updateProgress(
     job: Job,
-    progress: AIJobProgress
+    percentComplete: number
   ): Promise<void> {
-    await job.updateProgress(progress)
+    await job.updateProgress(percentComplete)
     if (job.id) {
-      await jobStatusTracker.setProgress(job.id, progress.percentComplete)
+      await jobStatusTracker.setProgress(job.id, percentComplete)
     }
   }
 

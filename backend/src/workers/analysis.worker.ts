@@ -2,8 +2,7 @@ import { Worker, Job } from 'bullmq'
 import { workerRedis } from '../queue/redis.client'
 import { QUEUE_NAMES, ANALYSIS_JOBS } from '../queue/job.types'
 import type {
-  RunRulesJobPayload,
-  AnalysisJobProgress
+  RunRulesJobPayload
 } from '../queue/job.types'
 import { enqueueAI } from '../queue/producers'
 import { jobStatusTracker } from '../queue/job-status'
@@ -137,9 +136,7 @@ export class AnalysisWorker {
       .set({ status: 'running', updatedAt: new Date() })
       .where(eq(scans.id, scanId))
 
-    await this.updateProgress(job, {
-      phase: 'loading', percentComplete: 10
-    } as AnalysisJobProgress)
+    await this.updateProgress(job, 10)
 
     const artifacts = await db
       .select()
@@ -169,11 +166,6 @@ export class AnalysisWorker {
       })
       .filter((w): w is NormalizedWorkflow => w !== null)
 
-    await this.updateProgress(job, {
-      phase: 'running-rules',
-      percentComplete: 30
-    } as AnalysisJobProgress)
-
     const engine = new AnalysisEngine()
     const analysisInput = {
       scanId,
@@ -182,10 +174,7 @@ export class AnalysisWorker {
     }
     const analysisReport = await engine.analyze(analysisInput)
 
-    await this.updateProgress(job, {
-      phase: 'scoring',
-      percentComplete: 70
-    } as AnalysisJobProgress)
+    await this.updateProgress(job, 60)
 
     await db.delete(findings).where(eq(findings.scanId, scanId))
 
@@ -208,6 +197,8 @@ export class AnalysisWorker {
     if (findingRows.length > 0) {
       await db.insert(findings).values(findingRows)
     }
+
+    await this.updateProgress(job, 75)
 
     await db.delete(analysisReports)
       .where(eq(analysisReports.scanId, scanId))
@@ -237,10 +228,7 @@ export class AnalysisWorker {
       })
       .where(eq(scans.id, scanId))
 
-    await this.updateProgress(job, {
-      phase: 'building-report',
-      percentComplete: 90
-    } as AnalysisJobProgress)
+    await this.updateProgress(job, 90)
 
     const shouldRunAI = (
       analysisReport.summary.score >= AI_SCORE_THRESHOLD ||
@@ -284,10 +272,7 @@ export class AnalysisWorker {
       })
     }
 
-    await this.updateProgress(job, {
-      phase: 'building-report',
-      percentComplete: 100
-    } as AnalysisJobProgress)
+    await this.updateProgress(job, 100)
 
     const result: AnalysisPipelineResult = {
       scanId,
@@ -336,11 +321,11 @@ export class AnalysisWorker {
 
   private async updateProgress(
     job: Job,
-    progress: AnalysisJobProgress
+    percentComplete: number
   ): Promise<void> {
-    await job.updateProgress(progress)
+    await job.updateProgress(percentComplete)
     if (job.id) {
-      await jobStatusTracker.setProgress(job.id, progress.percentComplete)
+      await jobStatusTracker.setProgress(job.id, percentComplete)
     }
   }
 

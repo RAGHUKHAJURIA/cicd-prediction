@@ -3,12 +3,13 @@ import { z } from "zod";
 import { eq, ilike, or, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "../db/client";
-import { repos } from "../db/schema";
+import { repos, users } from "../db/schema";
 import { validate, validateParams, validateQuery } from "../middleware/validate";
 import { NotFoundError, AppError } from "../middleware/error-handler";
 import { successResponse } from "../utils/response";
 import { GitHubClient, GitLabClient } from "../utils/github.client";
 import { requireAuth, requireRepoOwner } from "../middleware/auth.middleware";
+import { decryptTokenIfPresent } from "../lib/tokenCrypto";
 
 const router = Router();
 
@@ -99,16 +100,19 @@ const registerRepo: RequestHandler = async (
     const name = body.name ?? `${owner}/${repoName}`;
 
     // Check duplicate
-    const existing = await db
-      .select({ id: repos.id })
+    const existingQuery = db
+      .select({ id: repos.id, userId: repos.userId })
       .from(repos)
-      .where(eq(repos.repoUrl, body.repoUrl))
-      .limit(1);
+      .where(eq(repos.repoUrl, body.repoUrl));
+      
+    // If user is authenticated, we only conflict if THEY already have this repo
+    const existing = await existingQuery;
+    const userConflict = existing.find(r => r.userId === (req.currentUser ? req.currentUser.id : null));
 
-    if (existing.length > 0) {
+    if (userConflict) {
       return next(
-        new AppError(409, "Repository already registered", "CONFLICT", {
-          existingId: existing[0]!.id,
+        new AppError(409, "Repository already registered for your account", "CONFLICT", {
+          existingId: userConflict.id,
         })
       );
     }
@@ -116,8 +120,25 @@ const registerRepo: RequestHandler = async (
     // Verify accessibility
     let verificationWarning: string | undefined;
     if (provider === "github") {
-      const token =
-        body.githubToken ?? process.env["GITHUB_TOKEN"];
+      let token: string | undefined | null = body.githubToken;
+      
+      // Fallback to logged-in user's token from DB if not provided
+      if (!token && req.currentUser?.id) {
+        const [userRecord] = await db
+          .select({ githubAccessToken: users.githubAccessToken })
+          .from(users)
+          .where(eq(users.id, req.currentUser.id))
+          .limit(1);
+
+        if (userRecord?.githubAccessToken) {
+          token = decryptTokenIfPresent(userRecord.githubAccessToken);
+        }
+      }
+
+      if (!token) {
+        token = process.env["GITHUB_TOKEN"];
+      }
+
       if (token) {
         try {
           const gh = new GitHubClient(token);

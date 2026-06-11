@@ -8,6 +8,7 @@ import {
   uuid,
   pgEnum,
   varchar,
+  unique,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ export const categoryEnum = pgEnum("category", [
 
 export const repos = pgTable("repos", {
   id: uuid("id").primaryKey(),
-  repoUrl: text("repo_url").notNull().unique(),
+  repoUrl: text("repo_url").notNull(),
   name: text("name").notNull(),
   provider: providerEnum("provider").notNull(),
   owner: text("owner").notNull(),
@@ -71,6 +72,10 @@ export const repos = pgTable("repos", {
   userId: uuid("user_id").references(() => users.id, {
     onDelete: "cascade",
   }),
+}, (table) => {
+  return {
+    repoUrlUserIdUnique: unique("repo_url_user_id_unique").on(table.repoUrl, table.userId)
+  };
 });
 
 export type RepoRow = typeof repos.$inferSelect;

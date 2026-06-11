@@ -3,6 +3,7 @@ import http from "http";
 import { sql } from "drizzle-orm";
 import { createApp } from "./app";
 import { db, pool } from "./db/client";
+import { WorkerManager } from "./workers/worker-manager";
 
 const PORT = parseInt(process.env["PORT"] ?? "3000", 10);
 
@@ -20,6 +21,9 @@ async function bootstrap(): Promise<void> {
   if (!process.env["RESEND_API_KEY"]) {
     console.warn("[server] ⚠  RESEND_API_KEY is not set — registration emails will be skipped.");
   }
+
+  const workerManager = new WorkerManager();
+  await workerManager.startAll();
 
   const app = createApp();
   const server = http.createServer(app);
@@ -43,6 +47,8 @@ async function bootstrap(): Promise<void> {
     server.close(() => {
       console.log("[server] HTTP server closed.");
     });
+
+    await workerManager.stopAll();
 
     try {
       await pool.end();

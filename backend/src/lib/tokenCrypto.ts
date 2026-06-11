@@ -97,3 +97,13 @@ export function decryptToken(storedString: string): string {
     throw new Error("Decryption failed");
   }
 }
+
+export function encryptTokenIfPresent(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return encryptToken(value);
+}
+
+export function decryptTokenIfPresent(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return decryptToken(value);
+}

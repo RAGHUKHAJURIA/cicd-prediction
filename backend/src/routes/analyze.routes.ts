@@ -2,11 +2,12 @@ import { Router, Request, Response, NextFunction, RequestHandler } from "express
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { db } from "../db/client";
-import { scans, repos } from "../db/schema";
+import { scans, users } from "../db/schema";
 import { validate, validateParams } from "../middleware/validate";
 import { AppError } from "../middleware/error-handler";
 import { createRateLimiter } from "../middleware/rate-limiter";
 import { publicAnalyzer } from "../services/public-analyzer";
+import { decryptTokenIfPresent } from "../lib/tokenCrypto";
 import { successResponse } from "../utils/response";
 import { optionalAuth } from "../middleware/auth.middleware";
 import { eq } from "drizzle-orm";
@@ -98,20 +99,26 @@ const analyzeRepo: RequestHandler = async (
       owner,
       repoName,
       provider,
-      branch
+      branch,
+      req.currentUser?.id
     );
 
-    // If logged in and repo has no owner, associate it
-    if (req.currentUser && !repo.userId) {
-      await db
-        .update(repos)
-        .set({ userId: req.currentUser.id, updatedAt: new Date() })
-        .where(eq(repos.id, repo.id));
+    let activeToken: string | undefined | null = token;
+
+    if (!activeToken && req.currentUser?.id) {
+      const [userRecord] = await db
+        .select({ githubAccessToken: users.githubAccessToken })
+        .from(users)
+        .where(eq(users.id, req.currentUser.id))
+        .limit(1);
+
+      if (userRecord?.githubAccessToken) {
+        activeToken = decryptTokenIfPresent(userRecord.githubAccessToken);
+      }
     }
 
-    // 2. Ephemerally store temporary token in Redis if provided
-    if (token) {
-      await publicAnalyzer.storeEphemeralToken(repo.id, token);
+    if (activeToken) {
+      await publicAnalyzer.storeEphemeralToken(repo.id, activeToken);
     }
 
     // 3. Insert new scan record as queued

@@ -1,6 +1,6 @@
 import { db } from "../db/client";
 import { repos, scans, parsedArtifacts, findings, aiExplanations, aiRemediations, aiPredictions, analysisReports } from "../db/schema";
-import { eq, and, desc, lt } from "drizzle-orm";
+import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { queueRedis } from "../queue/redis.client";
 import { enqueueScan } from "../queue/producers";
 import { JobPriority } from "../queue/job.types";
@@ -24,12 +24,17 @@ export class PublicAnalyzer {
     owner: string,
     repoName: string,
     provider: "github" | "gitlab" | "gitea" | "self-hosted",
-    branch: string
+    branch: string,
+    userId?: string | null
   ) {
     const existing = await db
       .select()
       .from(repos)
-      .where(eq(repos.repoUrl, repoUrl))
+      .where(
+        userId 
+          ? and(eq(repos.repoUrl, repoUrl), eq(repos.userId, userId))
+          : and(eq(repos.repoUrl, repoUrl), sql`${repos.userId} IS NULL`)
+      )
       .limit(1)
       .then((r) => r[0]);
 
@@ -59,6 +64,7 @@ export class PublicAnalyzer {
         createdAt: now,
         updatedAt: now,
         totalScans: 0,
+        userId: userId || null,
       })
       .returning();
 

@@ -4,8 +4,7 @@ import { QUEUE_NAMES, SCAN_JOBS } from '../queue/job.types'
 import type {
   FetchAndParseJobPayload,
   RescanJobPayload,
-  ParseSingleFileJobPayload,
-  ScanJobProgress
+  ParseSingleFileJobPayload
 } from '../queue/job.types'
 import { enqueueAnalysis } from '../queue/producers'
 import { jobStatusTracker } from '../queue/job-status'
@@ -150,8 +149,13 @@ export class ScanWorker {
   }
 
   private async processJob(job: Job): Promise<ScanPipelineResult> {
+    await job.updateProgress(5)
+    if (job.id) {
+      await jobStatusTracker.setProgress(job.id, 5)
+    }
     switch (job.name) {
       case SCAN_JOBS.FETCH_AND_PARSE:
+      case 'scan-repo':
         return this.processFetchAndParse(job as Job<FetchAndParseJobPayload>)
       case SCAN_JOBS.RESCAN:
         return this.processRescan(job as Job<RescanJobPayload>)
@@ -169,210 +173,200 @@ export class ScanWorker {
     const { scanId, repoId, owner, repoName, branch,
       githubToken, ignorePaths } = job.data
 
-    this.log(LOG_EVENTS.JOB_STARTED, {
-      jobId: job.id, scanId, repoId, owner, repoName, branch
-    })
-
-    if (job.id) {
-      await jobStatusTracker.setActive(job.id)
-    }
-
-    await db.update(scans)
-      .set({ status: 'running', updatedAt: new Date() })
-      .where(eq(scans.id, scanId))
-
-    const progressPayload: ScanJobProgress = {
-      phase: 'fetching', filesTotal: 0, filesProcessed: 0,
-      percentComplete: 5
-    }
-    await this.updateProgress(job, progressPayload)
-
-    let token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN
-    if (!token) {
-      throw new Error(
-        `No GitHub token for repo ${owner}/${repoName}. ` +
-        `Set GITHUB_TOKEN env var or provide per-repo token.`
-      )
-    }
-    const github = new GitHubClient(token)
-
-    const fileTree = await github.getFileTree(owner, repoName, branch)
-
-    const ciFiles = fileTree.filter(file => {
-      const filePath = file.path
-      if (ignorePaths && ignorePaths.some(p => filePath.includes(p))) return false
-      return isCIFile(filePath)
-    })
-
-    this.log('scan_files_discovered', {
-      scanId, total: fileTree.length, ciFiles: ciFiles.length
-    })
-
-    await this.updateProgress(job, {
-      phase: 'fetching',
-      filesTotal: ciFiles.length,
-      filesProcessed: 0,
-      percentComplete: 15
-    })
-
-    type FileContent = { filePath: string; content: string }
-
-    const fetchResults = await batchWithConcurrency(
-      ciFiles,
-      MAX_CONCURRENT_FILE_FETCHES,
-      async (file): Promise<FileContent> => {
-        const content = await github.getFileContent(
-          owner, repoName, file.path, branch
-        )
-        await queueRedis.setex(`file-content:${scanId}:${file.path}`, 86400, content)
-        return { filePath: file.path, content }
-      }
-    )
-
-    const fetchedFiles: FileContent[] = []
-    for (const result of fetchResults) {
-      if (result.status === 'fulfilled') {
-        fetchedFiles.push(result.value)
-      } else {
-        this.log('file_fetch_failed', {
-          scanId, error: result.reason?.message
-        })
-      }
-    }
-
-    await this.updateProgress(job, {
-      phase: 'parsing',
-      filesTotal: fetchedFiles.length,
-      filesProcessed: 0,
-      percentComplete: 40
-    })
-
-    type ParsedFile = {
-      filePath:           string
-      parser:             string
-      normalizedWorkflow: unknown
-      warnings:           string[]
-    }
-    type ParseFailure = { filePath: string; error: string }
-
-    const parsedFiles: ParsedFile[] = []
-    const parseFailures: ParseFailure[] = []
-    let filesProcessed = 0
-
-    for (const { filePath, content } of fetchedFiles) {
-      try {
-        const parserName = detectFileType(filePath, content)
-        if (parserName) {
-          const result = detectAndParse(content, filePath, repoId)
-          if (result.success && result.result) {
-            parsedFiles.push({
-              filePath,
-              parser:             parserName,
-              normalizedWorkflow: result.result,
-              warnings:           result.warnings.map(w => w.message)
-            })
-          }
-        }
-      } catch (err: unknown) {
-        parseFailures.push({
-          filePath,
-          error: err instanceof Error ? err.message : String(err)
-        })
-        this.log('file_parse_failed', {
-          scanId, filePath, error: parseFailures.at(-1)!.error
-        })
-      }
-      filesProcessed++
-      await this.updateProgress(job, {
-        phase: 'parsing',
-        filesTotal: fetchedFiles.length,
-        filesProcessed,
-        currentFile: filePath,
-        percentComplete: Math.floor(40 + (filesProcessed / fetchedFiles.length) * 30)
+    try {
+      this.log(LOG_EVENTS.JOB_STARTED, {
+        jobId: job.id, scanId, repoId, owner, repoName, branch
       })
-    }
 
-    const insertValues = parsedFiles.map(pf => ({
-      id: randomUUID(),
-      scanId,
-      repoId,
-      filePath:       pf.filePath,
-      fileType:       pf.parser,
-      normalizedWorkflow: pf.normalizedWorkflow,
-      parseWarnings:  pf.warnings
-    }))
+      if (job.id) {
+        await jobStatusTracker.setActive(job.id)
+      }
 
-    let insertedIds: string[] = []
+      await db.update(scans)
+        .set({ status: 'running', updatedAt: new Date() })
+        .where(eq(scans.id, scanId))
 
-    if (insertValues.length > 0) {
-      await db.delete(parsedArtifacts)
-        .where(eq(parsedArtifacts.scanId, scanId))
+      await this.updateProgress(job, 5)
 
-      const inserted = await db
-        .insert(parsedArtifacts)
-        .values(insertValues)
-        .returning({ id: parsedArtifacts.id })
+      let token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN
+      if (!token) {
+        throw new Error(
+          `No GitHub token for repo ${owner}/${repoName}. ` +
+          `Set GITHUB_TOKEN env var or provide per-repo token.`
+        )
+      }
+      const github = new GitHubClient(token)
 
-      insertedIds = inserted.map(r => r.id)
-    }
+      await this.updateProgress(job, 15)
 
-    await this.updateProgress(job, {
-      phase: 'storing',
-      filesTotal: parsedFiles.length,
-      filesProcessed: parsedFiles.length,
-      percentComplete: 80
-    })
+      const fileTree = await github.getFileTree(owner, repoName, branch)
 
-    if (insertedIds.length > 0) {
-      const analysisJob = await enqueueAnalysis({
+      const ciFiles = fileTree.filter(file => {
+        const filePath = file.path
+        if (ignorePaths && ignorePaths.some(p => filePath.includes(p))) return false
+        return isCIFile(filePath)
+      })
+
+      this.log('scan_files_discovered', {
+        scanId, total: fileTree.length, ciFiles: ciFiles.length
+      })
+
+      await this.updateProgress(job, 30)
+
+      type FileContent = { filePath: string; content: string }
+
+      let fetchedCount = 0
+      const fetchResults = await batchWithConcurrency(
+        ciFiles,
+        MAX_CONCURRENT_FILE_FETCHES,
+        async (file): Promise<FileContent> => {
+          const content = await github.getFileContent(
+            owner, repoName, file.path, branch
+          )
+          await queueRedis.setex(`file-content:${scanId}:${file.path}`, 86400, content)
+          fetchedCount++
+          const pct = 30 + Math.floor((fetchedCount / ciFiles.length) * 30)
+          await this.updateProgress(job, pct)
+          return { filePath: file.path, content }
+        }
+      )
+
+      const fetchedFiles: FileContent[] = []
+      for (const result of fetchResults) {
+        if (result.status === 'fulfilled') {
+          fetchedFiles.push(result.value)
+        } else {
+          this.log('file_fetch_failed', {
+            scanId, error: result.reason?.message
+          })
+        }
+      }
+
+      await this.updateProgress(job, 60)
+
+      type ParsedFile = {
+        filePath:           string
+        parser:             string
+        normalizedWorkflow: unknown
+        warnings:           string[]
+      }
+      type ParseFailure = { filePath: string; error: string }
+
+      const parsedFiles: ParsedFile[] = []
+      const parseFailures: ParseFailure[] = []
+      let filesProcessed = 0
+
+      for (const { filePath, content } of fetchedFiles) {
+        try {
+          const parserName = detectFileType(filePath, content)
+          if (parserName) {
+            const result = detectAndParse(content, filePath, repoId)
+            if (result.success && result.result) {
+              parsedFiles.push({
+                filePath,
+                parser:             parserName,
+                normalizedWorkflow: result.result,
+                warnings:           result.warnings.map(w => w.message)
+              })
+            }
+          }
+        } catch (err: unknown) {
+          parseFailures.push({
+            filePath,
+            error: err instanceof Error ? err.message : String(err)
+          })
+          this.log('file_parse_failed', {
+            scanId, filePath, error: parseFailures.at(-1)!.error
+          })
+        }
+        filesProcessed++
+        await this.updateProgress(job, Math.floor(60 + (filesProcessed / fetchedFiles.length) * 20))
+      }
+
+      await this.updateProgress(job, 80)
+
+      const insertValues = parsedFiles.map(pf => ({
+        id: randomUUID(),
         scanId,
         repoId,
-        parsedArtifactIds: insertedIds,
-        ruleConfig: {}
+        filePath:       pf.filePath,
+        fileType:       pf.parser,
+        normalizedWorkflow: pf.normalizedWorkflow,
+        parseWarnings:  pf.warnings
+      }))
+
+      let insertedIds: string[] = []
+
+      if (insertValues.length > 0) {
+        await db.delete(parsedArtifacts)
+          .where(eq(parsedArtifacts.scanId, scanId))
+
+        const inserted = await db
+          .insert(parsedArtifacts)
+          .values(insertValues)
+          .returning({ id: parsedArtifacts.id })
+
+        insertedIds = inserted.map(r => r.id)
+      }
+
+      await this.updateProgress(job, 95)
+
+      if (insertedIds.length > 0) {
+        const analysisJob = await enqueueAnalysis({
+          scanId,
+          repoId,
+          parsedArtifactIds: insertedIds,
+          ruleConfig: {}
+        })
+
+        this.log(LOG_EVENTS.PIPELINE_ENQUEUED, {
+          scanId, nextStage: 'analysis', analysisJobId: analysisJob.jobId
+        })
+      }
+
+      await this.updateProgress(job, 100)
+
+      await db.update(scans)
+        .set({
+          totalFiles: ciFiles.length,
+          updatedAt: new Date(),
+          ...(insertedIds.length === 0
+            ? {
+              status: 'completed' as const,
+              completedAt: new Date(),
+              durationMs: Date.now() - start
+            }
+            : {})
+        })
+        .where(eq(scans.id, scanId))
+
+      const result: ScanPipelineResult = {
+        scanId,
+        repoId,
+        filesFound:          ciFiles.length,
+        filesParsed:         parsedFiles.length,
+        failedFiles:         parseFailures.length,
+        parsedArtifactIds:   insertedIds,
+        queuedAnalysis:      insertedIds.length > 0,
+        durationMs:          Date.now() - start
+      }
+
+      this.log(LOG_EVENTS.JOB_COMPLETED, {
+        jobId: job.id, ...result
       })
 
-      this.log(LOG_EVENTS.PIPELINE_ENQUEUED, {
-        scanId, nextStage: 'analysis', analysisJobId: analysisJob.jobId
-      })
+      return result
+    } catch (err: any) {
+      await db.update(scans)
+        .set({
+          status: 'failed',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+          errorMessage: err.message
+        })
+        .where(eq(scans.id, scanId))
+      throw err
     }
-
-    await this.updateProgress(job, {
-      phase: 'storing',
-      filesTotal: parsedFiles.length,
-      filesProcessed: parsedFiles.length,
-      percentComplete: 100
-    })
-
-    await db.update(scans)
-      .set({
-        totalFiles: ciFiles.length,
-        updatedAt: new Date(),
-        ...(insertedIds.length === 0
-          ? {
-            status: 'completed' as const,
-            completedAt: new Date(),
-            durationMs: Date.now() - start
-          }
-          : {})
-      })
-      .where(eq(scans.id, scanId))
-
-    const result: ScanPipelineResult = {
-      scanId,
-      repoId,
-      filesFound:          ciFiles.length,
-      filesParsed:         parsedFiles.length,
-      failedFiles:         parseFailures.length,
-      parsedArtifactIds:   insertedIds,
-      queuedAnalysis:      insertedIds.length > 0,
-      durationMs:          Date.now() - start
-    }
-
-    this.log(LOG_EVENTS.JOB_COMPLETED, {
-      jobId: job.id, ...result
-    })
-
-    return result
   }
 
   private async processRescan(
@@ -519,11 +513,11 @@ export class ScanWorker {
 
   private async updateProgress(
     job: Job,
-    progress: ScanJobProgress
+    percentComplete: number
   ): Promise<void> {
-    await job.updateProgress(progress)
+    await job.updateProgress(percentComplete)
     if (job.id) {
-      await jobStatusTracker.setProgress(job.id, progress.percentComplete)
+      await jobStatusTracker.setProgress(job.id, percentComplete)
     }
   }
 
