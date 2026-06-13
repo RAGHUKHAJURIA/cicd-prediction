@@ -60,6 +60,8 @@ export interface FindingWithPatch {
   remediation: string | null
   patch: AIPatch | null
   explanation: AIExplanation | null
+  requiresManualReview?: boolean
+  manualReviewReason?: string | null
 }
 
 export interface AIPatch {

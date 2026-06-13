@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 import { decryptToken } from "../lib/tokenCrypto";
 import { AppError } from "../middleware/error-handler";
 import { logger } from "../utils/logger";
+import { guardFileContent, containsPlaceholder, findPlaceholderMatches } from "../ai/file-output-guard";
+import { patchApplier } from "../ai/patch-applier";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -285,6 +287,12 @@ class GitHubUserService {
   ): Promise<PushPatchResult> {
     const octokit = await this.getOctokit(userId);
     const patchPath = ".github/cicd-reliability/patches.md";
+    if (!patchPath.endsWith('.md')) {
+      throw new Error(
+        'pushPatchFile must only write to .md documentation files. ' +
+        `Got: ${patchPath}`
+      );
+    }
     const content = this.buildPatchMarkdown(scanId, patches);
 
     try {
@@ -384,6 +392,57 @@ class GitHubUserService {
     let patchBranch = `cicd-reliability/fixes-${scanId.slice(0, 8)}`;
 
     try {
+      // Get authenticated user login
+      const authenticatedUser = await octokit.rest.users.getAuthenticated();
+      const userLogin = authenticatedUser.data.login;
+
+      // Check if user has write access to the repository
+      let hasWriteAccess = false;
+      try {
+        const { data: permissionData } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+          owner,
+          repo,
+          username: userLogin,
+        });
+        hasWriteAccess = ["admin", "write"].includes(permissionData.permission);
+      } catch (e) {
+        hasWriteAccess = false;
+      }
+
+      let targetOwner = owner;
+      let targetRepo = repo;
+      let headBranchParam = patchBranch;
+
+      if (!hasWriteAccess) {
+        logger.info(
+          { event: "creating_fork", owner, repo, userLogin },
+          "Forking repository for contributor PR"
+        );
+        const { data: fork } = await octokit.rest.repos.createFork({ owner, repo });
+        targetOwner = fork.owner.login;
+        targetRepo = fork.name;
+        headBranchParam = `${targetOwner}:${patchBranch}`;
+
+        // Wait for fork to be created and fully accessible on GitHub
+        let forkAccessible = false;
+        for (let attempt = 1; attempt <= 10; attempt++) {
+          try {
+            await octokit.rest.repos.get({ owner: targetOwner, repo: targetRepo });
+            forkAccessible = true;
+            break;
+          } catch {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+        if (!forkAccessible) {
+          throw new AppError(
+            504,
+            "Timeout waiting for repository fork to be created on GitHub.",
+            "GITHUB_FORK_TIMEOUT"
+          );
+        }
+      }
+
       // STEP 1 — Get the base branch SHA
       const { data: baseRef } = await octokit.rest.git.getRef({
         owner,
@@ -392,11 +451,11 @@ class GitHubUserService {
       });
       const baseSha = baseRef.object.sha;
 
-      // STEP 2 — Create new branch
+      // STEP 2 — Create new branch (on target repo, which is the fork if not hasWriteAccess)
       try {
         await octokit.rest.git.createRef({
-          owner,
-          repo,
+          owner: targetOwner,
+          repo: targetRepo,
           ref: `refs/heads/${patchBranch}`,
           sha: baseSha,
         });
@@ -409,9 +468,10 @@ class GitHubUserService {
           (branchErr as { status: number }).status === 422
         ) {
           patchBranch = `cicd-reliability/fixes-${scanId.slice(0, 8)}-${Date.now()}`;
+          headBranchParam = !hasWriteAccess ? `${targetOwner}:${patchBranch}` : patchBranch;
           await octokit.rest.git.createRef({
-            owner,
-            repo,
+            owner: targetOwner,
+            repo: targetRepo,
             ref: `refs/heads/${patchBranch}`,
             sha: baseSha,
           });
@@ -420,19 +480,147 @@ class GitHubUserService {
         }
       }
 
-      // STEP 3 — Commit patch file to new branch
+      // Fetch and apply patches to actual workflow/Dockerfile/etc. files
+      // Group patches by filePath
+      const patchesByFile = new Map<string, PatchInput[]>();
+      for (const p of patches) {
+        if (!p.filePath.endsWith('.md')) {
+          if (!patchesByFile.has(p.filePath)) {
+            patchesByFile.set(p.filePath, []);
+          }
+          patchesByFile.get(p.filePath)!.push(p);
+        }
+      }
+
+      const fileChanges: { path: string; newContent: string; originalContent: string; sha?: string }[] = [];
+
+      for (const [filePath, filePatches] of patchesByFile.entries()) {
+        try {
+          // Fetch original content from GitHub
+          const existing = await octokit.rest.repos.getContent({
+            owner,
+            repo,
+            path: filePath,
+            ref: baseBranch,
+          });
+
+          if (!Array.isArray(existing.data) && "content" in existing.data && existing.data.content) {
+            const originalContent = Buffer.from(existing.data.content, "base64").toString("utf8");
+            
+            // Map PatchInput to PatchResult for patchApplier
+            const patchResults = filePatches.map(p => ({
+              ruleId: p.ruleId,
+              filePath: p.filePath,
+              before: p.before,
+              after: p.after,
+              explanation: p.instructions || '',
+              confidence: 'certain' as const, // Treat as certain to apply
+              patchType: 'replace_value' as any,
+              isFullFile: false
+            }));
+
+            // Apply patches
+            const applied = patchApplier.applyPatches(originalContent, patchResults);
+            
+            fileChanges.push({
+              path: filePath,
+              newContent: applied.content,
+              originalContent: originalContent,
+              sha: existing.data.sha
+            });
+          }
+        } catch (err) {
+          logger.warn({ err, filePath }, "Failed to fetch original file content for patching");
+        }
+      }
+
+      // Filter fileChanges with guardFileContent
+      const safeFileChanges: typeof fileChanges = [];
+      for (const fc of fileChanges) {
+        const guarded = guardFileContent(
+          fc.newContent,
+          fc.originalContent,
+          { filePath: fc.path, source: 'create-pr' }
+        );
+
+        if (!guarded.safe) {
+          console.warn(
+            `[create-pr] Skipping file ${fc.path}: ${guarded.rejectedReason}`
+          );
+          continue;
+        }
+
+        safeFileChanges.push({
+          ...fc,
+          newContent: guarded.content
+        });
+      }
+
+      // Add final assertion checks
+      for (const fc of safeFileChanges) {
+        if (containsPlaceholder(fc.newContent)) {
+          throw new Error(
+            `REFUSING TO COMMIT: ${fc.path} contains placeholder tokens: ` +
+            findPlaceholderMatches(fc.newContent).join(', ')
+          );
+        }
+      }
+
+      // Commit the safe files to the new branch
+      for (const fc of safeFileChanges) {
+        // We commit to targetOwner/targetRepo (which could be the fork)
+        // Get the latest SHA of the file on the patch branch if it exists, or use the base branch SHA
+        let currentSha = fc.sha;
+        try {
+          const branchFile = await octokit.rest.repos.getContent({
+            owner: targetOwner,
+            repo: targetRepo,
+            path: fc.path,
+            ref: patchBranch,
+          });
+          if (!Array.isArray(branchFile.data) && "sha" in branchFile.data) {
+            currentSha = branchFile.data.sha;
+          }
+        } catch {}
+
+        await octokit.rest.repos.createOrUpdateFileContents({
+          owner: targetOwner,
+          repo: targetRepo,
+          path: fc.path,
+          message: `fix: apply reliability patches to ${fc.path}`,
+          content: Buffer.from(fc.newContent).toString("base64"),
+          branch: patchBranch,
+          ...(currentSha ? { sha: currentSha } : {}),
+          committer: {
+            name: "CI/CD Reliability Bot",
+            email: "bot@cicd-reliability.io",
+          },
+        });
+      }
+
+      // Commit patches.md as well
       await this.pushPatchFile(
         userId,
-        owner,
-        repo,
+        targetOwner,
+        targetRepo,
         patchBranch,
         scanId,
         patches
       );
 
-      // STEP 4 — Build PR body and open PR
-      const prBody = this.buildPRBody(scanId, patches);
-      const prTitle = `fix: CI/CD reliability improvements (${patches.length} fixes)`;
+      // Build PR body and title
+      const allFixesRejected = fileChanges.length > 0 && safeFileChanges.length === 0;
+      let prBody = this.buildPRBody(scanId, patches);
+      if (allFixesRejected) {
+        prBody = `## CI/CD Reliability Fixes (Manual Review Required)\n\n` +
+          `**No automatic fixes could be safely applied.** All findings require manual review.\n\n` +
+          `Please see the detailed instructions below or refer to the patches.md file.\n\n` +
+          prBody;
+      }
+      
+      const prTitle = allFixesRejected
+        ? `fix: CI/CD reliability improvements (manual review required)`
+        : `fix: CI/CD reliability improvements (${patches.length} fixes)`;
 
       let pr: { html_url: string; number: number; title: string };
       try {
@@ -441,7 +629,7 @@ class GitHubUserService {
           repo,
           title: prTitle,
           body: prBody,
-          head: patchBranch,
+          head: headBranchParam,
           base: baseBranch,
           maintainer_can_modify: true,
         });
@@ -457,7 +645,7 @@ class GitHubUserService {
           const { data: existingPRs } = await octokit.rest.pulls.list({
             owner,
             repo,
-            head: `${owner}:${patchBranch}`,
+            head: headBranchParam,
             state: "open",
           });
           if (existingPRs.length > 0) {

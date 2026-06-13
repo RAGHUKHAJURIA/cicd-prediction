@@ -47,15 +47,19 @@ interface GitHubTreeResponse {
 export class GitHubClient {
   private readonly baseUrl = "https://api.github.com";
 
-  constructor(private readonly token: string) {}
+  constructor(private readonly token?: string) {}
 
   private async request<T>(path: string): Promise<T> {
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+    if (this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+
     const res = await fetch(`${this.baseUrl}${path}`, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+      headers,
     });
 
     if (res.status === 404) {
@@ -93,8 +97,20 @@ export class GitHubClient {
     owner: string,
     repo: string,
     path: string,
-    branch: string
+    branch: string,
+    sha?: string
   ): Promise<string> {
+    if (sha) {
+      try {
+        const blob = await this.request<GitHubBlobResponse>(
+          `/repos/${owner}/${repo}/git/blobs/${sha}`
+        );
+        return Buffer.from(blob.content.replace(/\n/g, ""), "base64").toString("utf-8");
+      } catch (err) {
+        console.warn(`Failed to fetch blob direct by sha ${sha} for ${path}, falling back to contents API:`, err);
+      }
+    }
+
     const data = await this.request<GitHubContentResponse>(
       `/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${branch}`
     );

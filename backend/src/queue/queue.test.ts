@@ -231,13 +231,13 @@ function runTests() {
   // TEST 19
   const scanId = '550e8400-e29b-41d4-a716-446655440000'
   const findingId = '660e8400-e29b-41d4-a716-446655440000'
-  const expectedScanJobId = `scan:${scanId}:fetch`
-  const expectedAnalysisJobId = `analysis:${scanId}:rules`
-  const expectedAIExplainJobId = `ai:${scanId}:explain-scan`
-  const expectedFindingJobId = `ai:${scanId}:explain:${findingId}`
-  assert.strictEqual(expectedScanJobId, 'scan:550e8400-e29b-41d4-a716-446655440000:fetch')
-  assert.ok(expectedAnalysisJobId.startsWith('analysis:'))
-  assert.ok(expectedAIExplainJobId.startsWith('ai:'))
+  const expectedScanJobId = `scan-${scanId}-fetch`
+  const expectedAnalysisJobId = `analysis-${scanId}-rules`
+  const expectedAIExplainJobId = `ai-${scanId}-explain-scan`
+  const expectedFindingJobId = `ai-${scanId}-explain-${findingId}`
+  assert.strictEqual(expectedScanJobId, 'scan-550e8400-e29b-41d4-a716-446655440000-fetch')
+  assert.ok(expectedAnalysisJobId.startsWith('analysis-'))
+  assert.ok(expectedAIExplainJobId.startsWith('ai-'))
   assert.ok(expectedFindingJobId.includes(findingId))
   console.log('PASS: TEST 19')
 

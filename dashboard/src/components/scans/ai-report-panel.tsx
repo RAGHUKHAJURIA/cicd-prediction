@@ -2,7 +2,7 @@
 'use client';
 
 import { ScanDetail, AIJobStatus } from '@/lib/types';
-import { Sparkles, CheckCircle2, Circle, AlertCircle, Wrench, ShieldCheck, ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import { Sparkles, CheckCircle2, Circle, AlertCircle, Wrench, ShieldCheck, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useSWRConfig } from 'swr';
@@ -18,6 +18,7 @@ export function AIReportPanel({ scan, aiJob }: AIReportPanelProps) {
   const { mutate } = useSWRConfig();
   const [isGenerating, setIsGenerating] = useState(false);
   const [openRemediations, setOpenRemediations] = useState<Record<string, boolean>>({});
+  const [remediationTabs, setRemediationTabs] = useState<Record<string, 'diff' | 'file'>>({});
 
   const report = scan.analysisReport;
 
@@ -209,20 +210,67 @@ export function AIReportPanel({ scan, aiJob }: AIReportPanelProps) {
                 
                 <Collapsible.Content className="p-4 border-t border-border bg-canvas">
                   {rem.patch ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 animate-fade-in">
                       <div className="bg-canvas-inset border border-border rounded-md overflow-hidden font-mono text-[11px] leading-snug">
                         <div className="flex justify-between items-center px-3 py-1.5 bg-canvas-subtle border-b border-border">
-                          <span className="text-fg-muted">Suggested Patch</span>
-                          <button className="text-fg-muted hover:text-fg"><Copy className="w-3 h-3" /></button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-fg-muted font-semibold">Suggested Patch</span>
+                            <div className="flex bg-canvas p-0.5 rounded border border-border text-[9px] font-sans">
+                              <button
+                                onClick={() => setRemediationTabs(p => ({ ...p, [rem.findingId]: 'diff' }))}
+                                className={clsx(
+                                  "px-1.5 py-0.5 rounded transition-colors font-medium",
+                                  (remediationTabs[rem.findingId] || 'diff') === 'diff' ? "bg-border-muted text-fg" : "text-fg-muted hover:text-fg"
+                                )}
+                              >
+                                Diff View
+                              </button>
+                              <button
+                                onClick={() => setRemediationTabs(p => ({ ...p, [rem.findingId]: 'file' }))}
+                                className={clsx(
+                                  "px-1.5 py-0.5 rounded transition-colors font-medium",
+                                  remediationTabs[rem.findingId] === 'file' ? "bg-border-muted text-fg" : "text-fg-muted hover:text-fg"
+                                )}
+                              >
+                                Fixed Code
+                              </button>
+                            </div>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const activeTab = remediationTabs[rem.findingId] || 'diff';
+                              const code = activeTab === 'diff' ?
+                                `--- a/${rem.findingFilePath || 'file'}\n+++ b/${rem.findingFilePath || 'file'}\n@@ -1 +1 @@\n${rem.patch.before.split('\n').map(l => `-${l}`).join('\n')}\n${rem.patch.after.split('\n').map(l => `+${l}`).join('\n')}`
+                                : rem.patch.after;
+                              try {
+                                await navigator.clipboard.writeText(code);
+                              } catch(e) {
+                                console.error(e);
+                              }
+                            }}
+                            className="text-fg-muted hover:text-fg flex items-center gap-1 text-[11px] font-sans"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy {(remediationTabs[rem.findingId] || 'diff') === 'diff' ? 'diff' : 'fix'}</span>
+                          </button>
                         </div>
-                        <div className="p-3 overflow-x-auto whitespace-pre">
-                          {rem.patch.before.split('\n').map((line, l) => (
-                            <div key={`b-${l}`} className="flex text-danger bg-danger-subtle/10 px-2 rounded-sm"><span className="w-6 text-danger/50 select-none">-</span>{line}</div>
-                          ))}
-                          {rem.patch.after.split('\n').map((line, l) => (
-                            <div key={`a-${l}`} className="flex text-success bg-success-subtle/10 px-2 rounded-sm"><span className="w-6 text-success/50 select-none">+</span>{line}</div>
-                          ))}
-                        </div>
+                        
+                        {(remediationTabs[rem.findingId] || 'diff') === 'diff' ? (
+                          <div className="p-3 overflow-x-auto whitespace-pre max-h-[200px] custom-scrollbar">
+                            {rem.patch.before.split('\n').map((line, l) => (
+                              <div key={`b-${l}`} className="flex text-danger bg-danger-subtle/10 px-2 rounded-sm"><span className="w-6 text-danger/50 select-none mr-1">-</span>{line}</div>
+                            ))}
+                            {rem.patch.after.split('\n').map((line, l) => (
+                              <div key={`a-${l}`} className="flex text-success bg-success-subtle/10 px-2 rounded-sm"><span className="w-6 text-success/50 select-none mr-1">+</span>{line}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-3 overflow-x-auto whitespace-pre max-h-[200px] custom-scrollbar text-success-subtle">
+                            {rem.patch.after.split('\n').map((line, l) => (
+                              <div key={`a-${l}`} className="flex px-2 rounded-sm">{line}</div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (

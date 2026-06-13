@@ -8,6 +8,7 @@ import { validateParams, validateQuery } from '../middleware/validate'
 import { AppError, BadRequestError, NotFoundError } from '../middleware/error-handler'
 import { requireAuth, requireRepoOwner } from '../middleware/auth.middleware'
 import { decryptTokenIfPresent } from '../lib/tokenCrypto'
+import { guardFinding } from '../ai/file-output-guard'
 import { scanQueue } from '../queue/queue.definitions'
 import { queueRedis } from '../queue/redis.client'
 import {
@@ -557,12 +558,36 @@ const getScan: RequestHandler = async (
       .from(parsedArtifacts)
       .where(eq(parsedArtifacts.scanId, scanId))
 
-    // 9. Merge remediations/explanations into findings by ruleId
-    const findingsWithPatches = allFindings.map(f => ({
-      ...f,
-      patch: remediations.find(r => r.ruleId === f.ruleId) ?? null,
-      explanation: explanations.find(e => e.ruleId === f.ruleId) ?? null,
-    }))
+    // 9. Merge remediations/explanations into findings by ruleId and apply output guard
+    const findingsWithPatches = allFindings.map(f => {
+      const remediation = remediations.find(r => r.ruleId === f.ruleId) ?? null
+      const explanation = explanations.find(e => e.ruleId === f.ruleId) ?? null
+
+      const patchObj = remediation ? {
+        before: remediation.beforeCode || '',
+        after: remediation.afterCode || '',
+      } : null
+
+      const guard = guardFinding({
+        ruleId: f.ruleId,
+        filePath: f.filePath,
+        patch: patchObj,
+      })
+
+      return {
+        ...f,
+        patch: guard.displayPatch
+          ? {
+              ...remediation,
+              beforeCode: guard.displayPatch.before,
+              afterCode: guard.displayPatch.after,
+            }
+          : remediation,
+        explanation,
+        requiresManualReview: guard.requiresManualReview,
+        manualReviewReason: guard.manualReason,
+      }
+    })
 
     // 8. Group findings by file
     const byFile: Record<string, typeof findingsWithPatches> = {}

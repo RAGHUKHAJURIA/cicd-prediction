@@ -139,8 +139,13 @@ export class OutputValidator {
       if (content.length > 5000) {
         errors.push({ field: 'patchedContent', message: 'patchedContent exceeds 5000 chars', received: content.length });
       }
-      if (content.includes('YOUR_COMMAND_HERE') || content.includes('REPLACE_WITH') || content.includes('TODO:')) {
-        errors.push({ field: 'patchedContent', message: 'AI generated placeholder text instead of real fix', received: content });
+      const placeholderPatterns = [
+        'YOUR_COMMAND_HERE', 'REPLACE_WITH', 'TODO:', 'FIXME:',
+        '{REPLACE_WITH_SHA}', 'PLACEHOLDER'
+      ];
+      const foundPlaceholders = placeholderPatterns.filter(p => content.includes(p));
+      if (foundPlaceholders.length > 0) {
+        errors.push({ field: 'patchedContent', message: `AI generated placeholder text instead of real fix: ${foundPlaceholders.join(', ')}`, received: content });
       }
       if (content.match(/^'.*'$/m)) {
         warnings.push({ field: 'patchedContent', message: 'Potential hallucinated Python-style single quotes' });

@@ -74,7 +74,7 @@ export class PatchBuilder {
   }
 
   private buildMissingTimeoutPatch(evidence: string, filePath: string, context?: Record<string, unknown>): PatchResult {
-    const jobName = (context?.jobName as string) || evidence;
+    const jobName = (context?.jobName as string) || evidence || '';
     let timeout = 30;
     if (jobName.match(/deploy|release|publish/i)) timeout = 60;
     else if (jobName.match(/build|compile/i)) timeout = 45;
@@ -123,7 +123,7 @@ export class PatchBuilder {
   }
 
   private buildUnpinnedActionPatch(evidence: string, filePath: string): PatchResult {
-    const match = evidence.match(/^([^@]+)@(.*)$/);
+    const match = (evidence || '').match(/^([^@]+)@(.*)$/);
     const ownerRepo = match ? match[1] : evidence;
     const ref = match ? match[2] : 'unknown';
 

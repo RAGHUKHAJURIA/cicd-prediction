@@ -21,9 +21,8 @@ import {
   GitCommit,
   CheckCircle
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { RiskBadge } from '../ui/risk-badge';
 import clsx from 'clsx';
 
 interface ScanResultsViewProps {
@@ -39,6 +38,8 @@ export function ScanResultsView({
 }: ScanResultsViewProps) {
   const [animatedScore, setAnimatedScore] = useState(0);
   const [copiedPatchId, setCopiedPatchId] = useState<string | null>(null);
+  const [copiedSuggestedId, setCopiedSuggestedId] = useState<string | null>(null);
+  const [findingTabs, setFindingTabs] = useState<Record<string, 'diff' | 'file'>>({});
   
   // Action states per patch
   const [actionLoading, setActionLoading] = useState<Record<string, { type: 'push' | 'pr'; loading: boolean }>>({});
@@ -76,6 +77,16 @@ export function ScanResultsView({
     }
   };
 
+  const handleCopySuggested = async (findingId: string, code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedSuggestedId(findingId);
+      setTimeout(() => setCopiedSuggestedId(null), 1500);
+    } catch (err) {
+      console.error('Failed to copy text', err);
+    }
+  };
+
   const handlePushPatch = async (findingId: string, patchId: string) => {
     setActionLoading(p => ({ ...p, [findingId]: { type: 'push', loading: true } }));
     setActionError(p => ({ ...p, [findingId]: '' }));
@@ -101,8 +112,9 @@ export function ScanResultsView({
         ...p,
         [findingId]: { type: 'push', url: body.data.commitUrl }
       }));
-    } catch (err: any) {
-      setActionError(p => ({ ...p, [findingId]: err.message ?? 'Failed to push patch' }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to push patch';
+      setActionError(p => ({ ...p, [findingId]: message }));
     } finally {
       setActionLoading(p => ({ ...p, [findingId]: { type: 'push', loading: false } }));
     }
@@ -134,8 +146,9 @@ export function ScanResultsView({
         ...p,
         [findingId]: { type: 'pr', url: body.data.prUrl, number: body.data.prNumber }
       }));
-    } catch (err: any) {
-      setActionError(p => ({ ...p, [findingId]: err.message ?? 'Failed to create pull request' }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to create pull request';
+      setActionError(p => ({ ...p, [findingId]: message }));
     } finally {
       setActionLoading(p => ({ ...p, [findingId]: { type: 'pr', loading: false } }));
     }
@@ -228,7 +241,7 @@ export function ScanResultsView({
           No CI/CD files detected in this repository
         </h3>
         <p className="text-sm text-fg-muted max-w-sm mx-auto mb-8">
-          We couldn't find any GitHub Action workflows, Dockerfiles, Kubernetes manifests, or Jenkinsfiles in this branch. Please verify that your repository contains CI/CD configuration files.
+          We couldn&apos;t find any GitHub Action workflows, Dockerfiles, Kubernetes manifests, or Jenkinsfiles in this branch. Please verify that your repository contains CI/CD configuration files.
         </p>
         <button
           onClick={onRescan}
@@ -406,11 +419,15 @@ export function ScanResultsView({
                                   <span className="text-[10px] font-mono font-semibold bg-canvas-inset px-2 py-0.5 rounded border border-border text-fg-muted">
                                     {finding.ruleId}
                                   </span>
-                                  {hasPatch && (
+                                  {finding.requiresManualReview ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-warning-subtle/10 text-warning border border-warning-subtle/30">
+                                      ⚠ Manual Review Required
+                                    </span>
+                                  ) : hasPatch ? (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-success-subtle/10 text-success border border-success-subtle/30">
                                       <Sparkles className="w-3 h-3 animate-pulse" /> AI Fix Available
                                     </span>
-                                  )}
+                                  ) : null}
                                 </div>
                                 <h5 className="text-sm font-semibold text-fg mt-1.5">
                                   {finding.title}
@@ -442,135 +459,270 @@ export function ScanResultsView({
                                   </div>
                                 )}
                               </div>
-                            )}
-
-                            {/* Patch Diff Box */}
-                            {hasPatch && finding.patch && (
-                              <div className="space-y-3">
-                                <div className="flex justify-between items-center">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-semibold text-fg">AI Fix Code Suggestion</span>
-                                    {finding.patch.safe && (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-subtle/15 text-success border border-success-subtle/30">
-                                        ✓ Validated by rule engine
-                                      </span>
-                                    )}
-                                  </div>
-                                  <button
-                                    onClick={() => handleCopy(finding.patch!.id, finding.patch!.afterCode ?? '')}
-                                    className="inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors"
-                                  >
-                                    {copiedPatchId === finding.patch.id ? (
-                                      <>
-                                        <Check className="w-3.5 h-3.5 text-success" />
-                                        <span className="text-success font-medium">Copied!</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Copy className="w-3.5 h-3.5" />
-                                        <span>Copy fix</span>
-                                      </>
-                                    )}
-                                  </button>
-                                </div>
-
-                                {/* BEFORE/AFTER Diff panel */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                  {/* Before */}
-                                  <div className="border border-border rounded-md overflow-hidden bg-canvas-inset">
-                                    <div className="px-3 py-1.5 bg-danger-subtle/5 border-b border-border text-[10px] font-mono text-danger font-medium">
-                                      BEFORE
+                            )}                            {/* Patch Diff Box / Manual Review Warning */}
+                            {(finding.requiresManualReview || (hasPatch && finding.patch)) && (
+                              <div className="mt-3">
+                                {finding.requiresManualReview ? (
+                                  <div className="p-4 border border-warning/30 bg-warning-subtle/5 rounded-md space-y-3">
+                                    <div className="flex items-center gap-2 text-warning font-semibold text-xs">
+                                      <AlertTriangle className="w-4 h-4 text-warning" />
+                                      <span>This fix requires manual review</span>
                                     </div>
-                                    <pre className="p-3 font-mono text-[11px] leading-snug overflow-x-auto whitespace-pre bg-danger-subtle/5 text-danger-subtle max-h-[200px]">
-                                      {finding.patch.beforeCode?.split('\n').map((line, l) => (
-                                        <div key={l} className="flex"><span className="w-4 select-none opacity-50">-</span>{line}</div>
-                                      )) || 'No original code available'}
-                                    </pre>
-                                  </div>
-
-                                  {/* After */}
-                                  <div className="border border-border rounded-md overflow-hidden bg-canvas-inset">
-                                    <div className="px-3 py-1.5 bg-success-subtle/5 border-b border-border text-[10px] font-mono text-success font-medium">
-                                      AFTER (FIXED)
+                                    <div className="text-xs text-fg-muted">
+                                      Reason: {finding.manualReviewReason || 'Contains unresolved placeholder tokens'}
                                     </div>
-                                    <pre className="p-3 font-mono text-[11px] leading-snug overflow-x-auto whitespace-pre bg-success-subtle/5 text-success-subtle max-h-[200px]">
-                                      {finding.patch.afterCode?.split('\n').map((line, l) => (
-                                        <div key={l} className="flex"><span className="w-4 select-none opacity-50">+</span>{line}</div>
-                                      )) || 'No remediation code available'}
-                                    </pre>
+                                    {finding.patch && finding.patch.beforeCode && (
+                                      <div className="space-y-1.5">
+                                        <div className="text-[10px] font-semibold text-fg-muted uppercase">Current code</div>
+                                        <div className="border border-border rounded-md overflow-hidden bg-canvas-inset font-mono text-[11px] leading-snug">
+                                          <pre className="p-3 overflow-x-auto whitespace-pre bg-canvas-inset text-fg-subtle max-h-[150px] m-0">
+                                            {finding.patch.beforeCode}
+                                          </pre>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {finding.patch && finding.patch.afterCode && (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <div className="text-[10px] font-semibold text-fg-muted uppercase tracking-wider">Suggested code (contains placeholders)</div>
+                                          <button
+                                            onClick={() => handleCopySuggested(finding.id, finding.patch!.afterCode || '')}
+                                            className="inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg transition-colors"
+                                          >
+                                            {copiedSuggestedId === finding.id ? (
+                                              <>
+                                                <Check className="w-3.5 h-3.5 text-success animate-bounce" />
+                                                <span className="text-success font-medium">Copied Code!</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Copy className="w-3.5 h-3.5" />
+                                                <span>Copy Code</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                        <div className="border border-warning-subtle/30 rounded-md overflow-hidden bg-canvas-inset font-mono text-[11px] leading-snug shadow-inner">
+                                          <pre className="p-3 overflow-x-auto whitespace-pre bg-canvas-inset text-fg-muted max-h-[200px] m-0">
+                                            {(finding.patch.afterCode).split('\n').map((line, l) => (
+                                              <div key={`a-${l}`} className="flex px-2 rounded-sm select-all hover:bg-canvas-subtle/30">{line}</div>
+                                            ))}
+                                          </pre>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="space-y-1.5">
+                                      <div className="text-[10px] font-semibold text-fg-muted uppercase">Instructions</div>
+                                      <div className="text-xs text-fg-muted bg-canvas-subtle p-3 rounded-md border border-border leading-relaxed whitespace-pre-wrap">
+                                        {finding.patch?.instructions || finding.remediation || 'No plain-English instructions available.'}
+                                      </div>
+                                    </div>
+                                    <div className="pt-1 flex items-center gap-4 flex-wrap">
+                                      {finding.ruleId === 'security-unpinned-action' && (
+                                        <a
+                                          href={(() => {
+                                            const evidence = finding.patch?.beforeCode || finding.description || '';
+                                            const clean = evidence.replace(/['"`\s]/g, '').trim();
+                                            const match = clean.match(/([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_.]+)(?:\/([a-zA-Z0-9-_.]+))?@?([a-zA-Z0-9-_.]+)?/);
+                                            if (match) {
+                                              const owner = match[1];
+                                              const repo = match[2];
+                                              const ref = match[4] || 'v3';
+                                              return `https://github.com/${owner}/${repo}/commits/${ref}`;
+                                            }
+                                            return 'https://github.com/snyk/actions/node/commits/v3';
+                                          })()}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1.5 text-xs text-[#a371f7] hover:underline font-medium"
+                                        >
+                                          Find the commit SHA on GitHub <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                      )}
+                                      {finding.patch && finding.patch.afterCode && (
+                                        <button
+                                          onClick={() => handleCopySuggested(finding.id, finding.patch!.afterCode || '')}
+                                          className="inline-flex items-center gap-1.5 text-xs text-[#a371f7] hover:text-[#b48bf8] transition-colors"
+                                        >
+                                          {copiedSuggestedId === finding.id ? (
+                                            <>
+                                              <Check className="w-3.5 h-3.5 text-success" />
+                                              <span className="text-success font-medium">Copied code!</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Copy className="w-3.5 h-3.5" />
+                                              <span>Copy suggested code</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => handleCopy(finding.id, finding.patch?.instructions || finding.remediation || '')}
+                                        className="inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors"
+                                      >
+                                        {copiedPatchId === finding.id ? (
+                                          <>
+                                            <Check className="w-3.5 h-3.5 text-success" />
+                                            <span className="text-success font-medium">Copied!</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy className="w-3.5 h-3.5" />
+                                            <span>Copy instructions</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
+                                ) : (
+                                  <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold text-fg">AI Fix Code Suggestion</span>
+                                        {finding.patch!.safe && (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-subtle/15 text-success border border-success-subtle/30">
+                                            ✓ Validated by rule engine
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex bg-canvas-inset p-0.5 rounded border border-border text-[10px]">
+                                          <button
+                                            onClick={() => setFindingTabs(p => ({ ...p, [finding.id]: 'diff' }))}
+                                            className={clsx(
+                                              "px-2 py-0.5 rounded transition-colors",
+                                              (findingTabs[finding.id] || 'diff') === 'diff' ? "bg-border-muted text-fg" : "text-fg-muted hover:text-fg"
+                                            )}
+                                          >
+                                            Diff View
+                                          </button>
+                                          <button
+                                            onClick={() => setFindingTabs(p => ({ ...p, [finding.id]: 'file' }))}
+                                            className={clsx(
+                                              "px-2 py-0.5 rounded transition-colors",
+                                              findingTabs[finding.id] === 'file' ? "bg-border-muted text-fg" : "text-fg-muted hover:text-fg"
+                                            )}
+                                          >
+                                            Fixed Code
+                                          </button>
+                                        </div>
+                                        <button
+                                          onClick={() => handleCopy(finding.patch!.id, (findingTabs[finding.id] || 'diff') === 'diff' ? 
+                                            `--- a/${finding.filePath}\n+++ b/${finding.filePath}\n@@ -1 +1 @@\n${(finding.patch!.beforeCode ?? '').split('\n').map(l => `-${l}`).join('\n')}\n${(finding.patch!.afterCode ?? '').split('\n').map(l => `+${l}`).join('\n')}`
+                                            : (finding.patch!.afterCode ?? '')
+                                          )}
+                                          className="inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors"
+                                        >
+                                          {copiedPatchId === finding.patch!.id ? (
+                                            <>
+                                              <Check className="w-3.5 h-3.5 text-success" />
+                                              <span className="text-success font-medium">Copied!</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Copy className="w-3.5 h-3.5" />
+                                              <span>{(findingTabs[finding.id] || 'diff') === 'diff' ? 'Copy diff' : 'Copy fix'}</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
+                                    </div>
 
-                                {/* PR/Push actions */}
-                                <div className="pt-2 flex flex-wrap items-center gap-3">
-                                  <button
-                                    onClick={() => handlePushPatch(finding.id, finding.patch!.id)}
-                                    disabled={isPushLoading || isPrLoading || !!isActionSuccess}
-                                    className={clsx(
-                                      "inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-xs font-semibold transition-all",
-                                      isActionSuccess?.type === 'push'
-                                        ? "bg-success-subtle/10 border-success-subtle text-success"
-                                        : "bg-canvas hover:bg-canvas-subtle border-border hover:border-border-hover text-fg disabled:opacity-50"
-                                    )}
-                                  >
-                                    {isPushLoading ? (
-                                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                    ) : isActionSuccess?.type === 'push' ? (
-                                      <CheckCircle className="w-3.5 h-3.5 text-success" />
+                                    {/* Diff/File panel */}
+                                    {(findingTabs[finding.id] || 'diff') === 'diff' ? (
+                                      <div className="border border-border rounded-md overflow-hidden bg-canvas-inset font-mono text-[11px] leading-snug">
+                                        <pre className="p-3 overflow-x-auto whitespace-pre bg-canvas-inset max-h-[200px] m-0">
+                                          {(finding.patch!.beforeCode ?? '').split('\n').map((line, l) => (
+                                            <div key={`b-${l}`} className="flex text-danger bg-danger-subtle/5 px-2 rounded-sm"><span className="w-4 select-none opacity-50 mr-1">-</span>{line}</div>
+                                          ))}
+                                          {(finding.patch!.afterCode ?? '').split('\n').map((line, l) => (
+                                            <div key={`a-${l}`} className="flex text-success bg-success-subtle/5 px-2 rounded-sm"><span className="w-4 select-none opacity-50 mr-1">+</span>{line}</div>
+                                          ))}
+                                        </pre>
+                                      </div>
                                     ) : (
-                                      <GitCommit className="w-3.5 h-3.5" />
+                                      <div className="border border-border rounded-md overflow-hidden bg-canvas-inset font-mono text-[11px] leading-snug">
+                                        <pre className="p-3 overflow-x-auto whitespace-pre bg-canvas-inset text-success-subtle max-h-[200px] m-0">
+                                          {(finding.patch!.afterCode ?? '').split('\n').map((line, l) => (
+                                            <div key={`a-${l}`} className="flex px-2 rounded-sm">{line}</div>
+                                          )) || 'No remediation code available'}
+                                        </pre>
+                                      </div>
                                     )}
-                                    <span>
-                                      {isPushLoading 
-                                        ? 'Pushing...' 
-                                        : isActionSuccess?.type === 'push' 
-                                          ? 'Pushed to GitHub!' 
-                                          : 'Push patch file'}
-                                    </span>
-                                  </button>
 
-                                  <button
-                                    onClick={() => handleCreatePR(finding.id, finding.patch!.id)}
-                                    disabled={isPushLoading || isPrLoading || !!isActionSuccess}
-                                    className={clsx(
-                                      "inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-xs font-semibold transition-all",
-                                      isActionSuccess?.type === 'pr'
-                                        ? "bg-success-subtle/10 border-success-subtle text-success"
-                                        : "bg-canvas hover:bg-canvas-subtle border-border hover:border-border-hover text-fg disabled:opacity-50"
+                                    {/* PR/Push actions */}
+                                    <div className="pt-2 flex flex-wrap items-center gap-3">
+                                      <button
+                                        onClick={() => handlePushPatch(finding.id, finding.patch!.id)}
+                                        disabled={isPushLoading || isPrLoading || !!isActionSuccess}
+                                        className={clsx(
+                                          "inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-xs font-semibold transition-all",
+                                          isActionSuccess?.type === 'push'
+                                            ? "bg-success-subtle/10 border-success-subtle text-success"
+                                            : "bg-canvas hover:bg-canvas-subtle border-border hover:border-border-hover text-fg disabled:opacity-50"
+                                        )}
+                                      >
+                                        {isPushLoading ? (
+                                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        ) : isActionSuccess?.type === 'push' ? (
+                                          <CheckCircle className="w-3.5 h-3.5 text-success" />
+                                        ) : (
+                                          <GitCommit className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>
+                                          {isPushLoading 
+                                            ? 'Pushing...' 
+                                            : isActionSuccess?.type === 'push' 
+                                              ? 'Pushed to GitHub!' 
+                                              : 'Push patch file'}
+                                        </span>
+                                      </button>
+
+                                      <button
+                                        onClick={() => handleCreatePR(finding.id, finding.patch!.id)}
+                                        disabled={isPushLoading || isPrLoading || !!isActionSuccess}
+                                        className={clsx(
+                                          "inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-xs font-semibold transition-all",
+                                          isActionSuccess?.type === 'pr'
+                                            ? "bg-success-subtle/10 border-success-subtle text-success"
+                                            : "bg-canvas hover:bg-canvas-subtle border-border hover:border-border-hover text-fg disabled:opacity-50"
+                                        )}
+                                      >
+                                        {isPrLoading ? (
+                                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        ) : isActionSuccess?.type === 'pr' ? (
+                                          <CheckCircle className="w-3.5 h-3.5 text-success" />
+                                        ) : (
+                                          <GitPullRequest className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>
+                                          {isPrLoading 
+                                            ? 'Creating PR...' 
+                                            : isActionSuccess?.type === 'pr' 
+                                              ? 'PR Created!' 
+                                              : 'Create PR'}
+                                        </span>
+                                      </button>
+
+                                      {isActionSuccess && (
+                                        <a
+                                          href={isActionSuccess.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1 text-xs text-accent hover:underline font-medium ml-2"
+                                        >
+                                          View on GitHub <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                      )}
+                                    </div>
+
+                                    {isActionError && (
+                                          <p className="text-xs text-danger font-medium mt-1">
+                                        Error: {isActionError}
+                                      </p>
                                     )}
-                                  >
-                                    {isPrLoading ? (
-                                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                    ) : isActionSuccess?.type === 'pr' ? (
-                                      <CheckCircle className="w-3.5 h-3.5 text-success" />
-                                    ) : (
-                                      <GitPullRequest className="w-3.5 h-3.5" />
-                                    )}
-                                    <span>
-                                      {isPrLoading 
-                                        ? 'Creating PR...' 
-                                        : isActionSuccess?.type === 'pr' 
-                                          ? 'PR Created!' 
-                                          : 'Create PR'}
-                                    </span>
-                                  </button>
-
-                                  {isActionSuccess && (
-                                    <a
-                                      href={isActionSuccess.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 text-xs text-accent hover:underline font-medium ml-2"
-                                    >
-                                      View on GitHub <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  )}
-                                </div>
-
-                                {isActionError && (
-                                  <p className="text-xs text-danger font-medium mt-1">
-                                    Error: {isActionError}
-                                  </p>
+                                  </div>
                                 )}
                               </div>
                             )}

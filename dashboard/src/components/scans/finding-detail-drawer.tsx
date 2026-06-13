@@ -6,6 +6,19 @@ import { useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { apiClient } from '@/lib/api-client';
 
+/** Detect patches that contain placeholder tokens or manual-review markers */
+function isManualReviewPatch(remediation: string): boolean {
+  if (!remediation) return false;
+  const markers = [
+    'REPLACE_WITH', '{REPLACE_WITH_SHA}', 'YOUR_COMMAND_HERE',
+    'MANUAL REVIEW', 'MANUAL_REVIEW', 'manual-review-required',
+    'TODO:', 'FIXME:', 'PLACEHOLDER',
+    '⚠️ MANUAL REVIEW'
+  ];
+  const lower = remediation.toLowerCase();
+  return markers.some(m => lower.includes(m.toLowerCase()));
+}
+
 interface FindingDetailDrawerProps {
   finding: Finding | null;
   open: boolean;
@@ -134,9 +147,37 @@ export function FindingDetailDrawer({ finding, open, onOpenChange, aiExplanation
               <h3 className="text-sm font-semibold text-fg mb-2 uppercase tracking-wider flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-success" /> How to fix it
               </h3>
-              <div className="p-4 bg-canvas border border-border rounded-md text-sm text-fg-muted leading-relaxed whitespace-pre-wrap">
-                {finding.remediation}
-              </div>
+              {isManualReviewPatch(finding.remediation) ? (
+                <div className="border border-warning/30 rounded-md overflow-hidden">
+                  <div className="px-4 py-2 bg-warning-subtle/20 border-b border-warning/20 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-warning" />
+                    <span className="text-xs font-semibold text-warning uppercase tracking-wider">Manual review required</span>
+                  </div>
+                  <div className="p-4 bg-canvas text-sm text-fg-muted leading-relaxed whitespace-pre-wrap font-mono">
+                    {finding.remediation}
+                  </div>
+                  <div className="px-4 py-2 bg-canvas-subtle border-t border-border flex gap-2">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(finding.remediation);
+                      }}
+                      className="px-3 py-1.5 bg-canvas hover:bg-border-muted border border-border text-fg text-xs font-medium rounded-md transition-colors flex items-center gap-1.5"
+                    >
+                      <Copy className="w-3 h-3" /> Copy snippet
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="border border-success/30 rounded-md overflow-hidden">
+                  <div className="px-4 py-2 bg-green-900/20 border-b border-success/20 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-success" />
+                    <span className="text-xs font-semibold text-success uppercase tracking-wider">Auto-fix available</span>
+                  </div>
+                  <div className="p-4 bg-canvas text-sm text-fg-muted leading-relaxed whitespace-pre-wrap">
+                    {finding.remediation}
+                  </div>
+                </div>
+              )}
             </section>
           </div>
 

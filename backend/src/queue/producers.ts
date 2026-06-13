@@ -57,7 +57,7 @@ export async function enqueueScan(
     throw new Error('Invalid payload: repoId, scanId, owner, and repoName are required')
   }
 
-  const jobId = `scan:${payload.repoId}:${payload.scanId}`
+  const jobId = `scan-${payload.repoId}-${payload.scanId}`
   const queueName = 'scan-queue'
   const createdAt = new Date().toISOString()
   const priority = payload.priority ?? JobPriority.NORMAL
@@ -108,7 +108,7 @@ export async function enqueueAnalysis(
     throw new Error('Invalid payload: scanId and repoId are required')
   }
 
-  const jobId = `analysis:${payload.scanId}`
+  const jobId = `analysis-${payload.scanId}`
   const queueName = 'analysis-queue'
   const priority = JobPriority.NORMAL
   const createdAt = new Date().toISOString()
@@ -158,7 +158,7 @@ export async function enqueueAI(
     throw new Error('Invalid payload: scanId and repoId are required')
   }
 
-  const jobId = `ai:${payload.scanId}`
+  const jobId = `ai-${payload.scanId}`
   const queueName = 'ai-queue'
   const createdAt = new Date().toISOString()
   const priority = JobPriority.NORMAL
@@ -209,7 +209,7 @@ export async function enqueueBulkScans(
       throw new Error('Invalid payload: repoId, scanId, owner, and repoName are required')
     }
 
-    const jobId = `scan:${payload.repoId}:${payload.scanId}`
+    const jobId = `scan-${payload.repoId}-${payload.scanId}`
     const priority = payload.priority ?? JobPriority.NORMAL
     
     return {
@@ -326,7 +326,7 @@ export async function enqueueRescan(
     throw new Error('Invalid payload: repoId, originalScanId, and newScanId are required')
   }
 
-  const jobId = `scan:${payload.repoId}:${payload.newScanId}:rescan`
+  const jobId = `scan-${payload.repoId}-${payload.newScanId}-rescan`
   const queueName = 'scan-queue'
   const createdAt = new Date().toISOString()
   const priority = payload.priority ?? JobPriority.NORMAL

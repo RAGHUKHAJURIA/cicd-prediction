@@ -80,6 +80,8 @@ export interface InlineFinding {
   remediation: string | null;
   aiExplanation: AIFindingExplanation | null;
   patch: AIPatch | null;
+  requiresManualReview?: boolean;
+  manualReviewReason?: string | null;
 }
 
 export interface FileScanDetail {

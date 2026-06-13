@@ -156,6 +156,8 @@ export function ResultsShell({ flow }: { flow: any }) {
             finding={selectedFinding as any}
             aiReport={aiReport}
             allFindings={allFindings}
+            fileContent={selectedFileData?.content ?? null}
+            fileName={state.selectedFile?.split("/").pop() ?? "file"}
             onClose={() => handleSelectFinding(null)}
           />
         </div>

@@ -207,7 +207,7 @@ export class AnalysisWorker {
       id: randomUUID(),
       scanId,
       repoId,
-      overallScore:  analysisReport.summary.score,
+      overallScore:  Math.round(analysisReport.summary.score),
       riskGrade:     analysisReport.summary.grade,
       criticalCount: analysisReport.summary.findingsBySeverity['critical' as RuleSeverity] ?? 0,
       highCount:     analysisReport.summary.findingsBySeverity['high' as RuleSeverity] ?? 0,

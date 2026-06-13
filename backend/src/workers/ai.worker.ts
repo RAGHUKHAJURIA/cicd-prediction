@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq'
-import { workerRedis } from '../queue/redis.client'
+import { workerRedis, queueRedis } from '../queue/redis.client'
 import { QUEUE_NAMES, AI_JOBS } from '../queue/job.types'
 import { jobStatusTracker } from '../queue/job-status'
 import type {
@@ -11,10 +11,10 @@ import type {
 } from '../queue/job.types'
 import { AIOrchestrator } from '../ai/ai-orchestrator'
 import { db } from '../db/client'
-import { scans, aiExplanations, aiRemediations, aiPredictions } from '../db/schema'
+import { scans, findings, parsedArtifacts, aiExplanations, aiRemediations, aiPredictions, analysisReports } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
-import type { AIContext } from '../engine/report-builder'
+import type { AIContext, AIFinding } from '../engine/report-builder'
 import { WorkerName, WorkerStatus, WORKER_CONCURRENCY, LOG_EVENTS, AIPipelineResult, WorkerHealth } from './worker.types'
 
 export class AIWorker {
@@ -150,13 +150,15 @@ export class AIWorker {
       throw new Error(`Invalid aiContextJson for scan ${scanId}: not valid JSON`)
     }
 
+    const { findingsList, workflowContents } = await this.getFindingsAndWorkflows(scanId)
+
     const orchestrator = new AIOrchestrator()
     const fullReport = await orchestrator.generateFullReport(
       scanId,
       repoId,
       aiContext,
-      [],
-      new Map()
+      findingsList,
+      workflowContents
     )
 
     await this.updateProgress(job, 40)
@@ -186,20 +188,24 @@ export class AIWorker {
 
     if (fullReport.remediationReport?.remediations?.length) {
       await db.insert(aiRemediations).values(
-        fullReport.remediationReport.remediations.map((r: any) => ({
-          id: randomUUID(),
-          scanId,
-          repoId,
-          ruleId:       r.findingRuleId,
-          title:        r.aiPatch?.title || 'Remediation',
-          beforeCode:   r.aiPatch?.before || '',
-          afterCode:    r.aiPatch?.after || r.aiPatch?.patchedContent || '',
-          language:     r.aiPatch?.language || 'yaml',
-          instructions: r.aiPatch?.instructions || r.finalRecommendation || '',
-          safe:         r.aiPatch?.safe ?? true,
-          warning:      r.aiPatch?.warning ?? null,
-          createdAt:    new Date()
-        }))
+        fullReport.remediationReport.remediations.map((r: any) => {
+          const finding = findingsList.find((f: any) => f.ruleId === r.findingRuleId && f.filePath === r.findingFilePath);
+          return {
+            id: randomUUID(),
+            scanId,
+            repoId,
+            ruleId:       r.findingRuleId,
+            title:        r.aiPatch?.title || 'Remediation',
+            beforeCode:   r.patch?.before || finding?.evidence || '',
+            afterCode:    r.aiPatch?.patchedContent || r.patch?.after || '',
+            language:     r.aiPatch?.language || 'yaml',
+            instructions: r.aiPatch?.instructions || r.finalRecommendation || '',
+            safe:         r.aiPatch?.safe ?? true,
+            warning:      r.aiPatch?.warning ?? null,
+            confidence:   r.patch?.confidence || (r.aiPatch?.requiresManualReview ? 'manual-review-required' : 'likely'),
+            createdAt:    new Date()
+          };
+        })
       )
     }
 
@@ -257,13 +263,15 @@ export class AIWorker {
       throw new Error(`Invalid aiContextJson for scan ${scanId}: not valid JSON`)
     }
 
+    const { findingsList, workflowContents } = await this.getFindingsAndWorkflows(scanId)
+
     const orchestrator = new AIOrchestrator()
     const fullReport = await orchestrator.generateFullReport(
       scanId,
       repoId,
       aiContext,
-      [],
-      new Map()
+      findingsList,
+      workflowContents
     )
 
     return {
@@ -276,6 +284,72 @@ export class AIWorker {
       estimatedCostUsd:       fullReport.totalCostUsd ?? 0,
       durationMs:             Date.now() - start
     }
+  }
+
+  private async getFindingsAndWorkflows(scanId: string): Promise<{
+    findingsList: AIFinding[]
+    workflowContents: Map<string, string>
+  }> {
+    // Try to load findings with original evidence from analysis_reports table first
+    const [report] = await db
+      .select({ reportJson: analysisReports.reportJson })
+      .from(analysisReports)
+      .where(eq(analysisReports.scanId, scanId))
+      .limit(1)
+
+    let findingsList: AIFinding[] = []
+
+    if (report?.reportJson) {
+      try {
+        const parsedReport = JSON.parse(report.reportJson)
+        const allFindings = parsedReport.findings?.all || []
+        findingsList = allFindings.map((f: any) => ({
+          ruleId: f.ruleId,
+          title: f.title,
+          severity: f.severity,
+          category: f.category,
+          filePath: f.location?.filePath || f.filePath || '',
+          evidence: f.evidence || '',
+          remediation: f.remediation || ''
+        }))
+      } catch (err) {
+        console.error("Error parsing reportJson in AIWorker getFindingsAndWorkflows:", err)
+      }
+    }
+
+    // Fallback to findings table if reportJson was not found or failed to parse
+    if (findingsList.length === 0) {
+      const rawFindings = await db
+        .select()
+        .from(findings)
+        .where(eq(findings.scanId, scanId))
+
+      findingsList = rawFindings.map((f: any) => ({
+        ruleId: f.ruleId,
+        title: f.title,
+        severity: f.severity,
+        category: f.category,
+        filePath: f.filePath,
+        evidence: f.description || '',
+        remediation: f.remediation || ''
+      }))
+    }
+
+    const artifacts = await db
+      .select()
+      .from(parsedArtifacts)
+      .where(eq(parsedArtifacts.scanId, scanId))
+
+    const workflowContents = new Map<string, string>()
+    for (const art of artifacts) {
+      let content = await queueRedis.get(`file-content:${scanId}:${art.filePath}`)
+      if (!content && art.normalizedWorkflow) {
+        content = (art.normalizedWorkflow as any).raw || ''
+      }
+      workflowContents.set(art.filePath, content || '')
+    }
+
+    return { findingsList, workflowContents }
   }
 
   private async processExplainFinding(job: Job<ExplainFindingJobPayload>): Promise<AIPipelineResult> {

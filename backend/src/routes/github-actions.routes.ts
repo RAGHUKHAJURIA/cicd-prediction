@@ -60,7 +60,7 @@ async function fetchPatchData(
   scanId: string,
   repoId: string,
   patchIds?: string[]
-): Promise<PatchInput[]> {
+): Promise<{ patches: PatchInput[]; skippedManualReviewCount: number }> {
   // Fetch remediations
   let remediations = await db
     .select()
@@ -89,6 +89,23 @@ async function fetchPatchData(
     );
   }
 
+  // Filter by confidence: only auto-apply certain/likely patches
+  // Manual-review patches are excluded from push/PR but counted
+  const autoApplyable = safeRemediations.filter((r) => {
+    const confidence = r.confidence ?? deriveConfidence(r.warning);
+    return confidence === 'certain' || confidence === 'likely';
+  });
+
+  const skippedManualReviewCount = safeRemediations.length - autoApplyable.length;
+
+  if (autoApplyable.length === 0) {
+    throw new AppError(
+      422,
+      `No auto-applicable patches available. ${skippedManualReviewCount} patch(es) require manual review.`,
+      "NO_AUTO_PATCHES"
+    );
+  }
+
   // Get file paths from related findings (join on scanId + ruleId)
   const scanFindings = await db
     .select({ ruleId: findings.ruleId, filePath: findings.filePath })
@@ -102,7 +119,7 @@ async function fetchPatchData(
     }
   }
 
-  return safeRemediations.map((r) => ({
+  const patches = autoApplyable.map((r) => ({
     ruleId: r.ruleId ?? "unknown",
     filePath: ruleToFile.get(r.ruleId ?? "") ?? "unknown",
     before: r.beforeCode ?? "",
@@ -110,6 +127,24 @@ async function fetchPatchData(
     language: r.language ?? "yaml",
     instructions: r.instructions ?? "",
   }));
+
+  return { patches, skippedManualReviewCount };
+}
+
+/**
+ * Derive confidence from the warning text when the confidence column is null.
+ * Existing rows may not have the confidence column populated.
+ */
+function deriveConfidence(warning: string | null): string {
+  if (!warning) return 'certain';
+  const lower = warning.toLowerCase();
+  if (lower.includes('manual review') || lower.includes('manual-review') || lower.includes('placeholder')) {
+    return 'manual-review-required';
+  }
+  if (lower.includes('likely') || lower.includes('verify')) {
+    return 'likely';
+  }
+  return 'certain';
 }
 
 // ─── POST /api/github/actions/push-patch ──────────────────────────────────────
@@ -126,7 +161,7 @@ const pushPatch: RequestHandler = async (
 
     const body = pushPatchSchema.parse(req.body);
     const repo = await getRepoAndVerifyOwner(body.repoId, req.currentUser.id);
-    const patchData = await fetchPatchData(
+    const { patches: patchData, skippedManualReviewCount } = await fetchPatchData(
       body.scanId,
       body.repoId,
       body.patchIds
@@ -148,6 +183,7 @@ const pushPatch: RequestHandler = async (
         scanId: body.scanId,
         branch: body.branch,
         patchCount: patchData.length,
+        skippedManualReviewCount,
         commitSha: result.commitSha,
       },
       "Patch file pushed to GitHub"
@@ -158,6 +194,7 @@ const pushPatch: RequestHandler = async (
       commitSha: result.commitSha,
       patchFilePath: result.patchFilePath,
       patchesIncluded: patchData.length,
+      skippedManualReviewCount,
     });
   } catch (err) {
     next(err);
@@ -178,7 +215,7 @@ const createPR: RequestHandler = async (
 
     const body = createPRSchema.parse(req.body);
     const repo = await getRepoAndVerifyOwner(body.repoId, req.currentUser.id);
-    const patchData = await fetchPatchData(
+    const { patches: patchData, skippedManualReviewCount } = await fetchPatchData(
       body.scanId,
       body.repoId,
       body.patchIds
@@ -201,6 +238,7 @@ const createPR: RequestHandler = async (
         prNumber: result.prNumber,
         prUrl: result.prUrl,
         patchCount: patchData.length,
+        skippedManualReviewCount,
       },
       "Pull request created on GitHub"
     );
@@ -210,6 +248,8 @@ const createPR: RequestHandler = async (
       prNumber: result.prNumber,
       prTitle: result.prTitle,
       headBranch: result.headBranch,
+      patchesIncluded: patchData.length,
+      skippedManualReviewCount,
     });
   } catch (err) {
     next(err);

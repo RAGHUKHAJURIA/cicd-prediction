@@ -208,6 +208,7 @@ export const aiRemediations = pgTable("ai_remediations", {
   instructions: text("instructions"),
   safe: boolean("safe"),
   warning: text("warning"),
+  confidence: text("confidence"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

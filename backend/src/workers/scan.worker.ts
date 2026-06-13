@@ -188,20 +188,40 @@ export class ScanWorker {
 
       await this.updateProgress(job, 5)
 
-      let token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN
-      if (!token) {
-        throw new Error(
-          `No GitHub token for repo ${owner}/${repoName}. ` +
-          `Set GITHUB_TOKEN env var or provide per-repo token.`
-        )
-      }
-      const github = new GitHubClient(token)
+      const token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN;
+      const github = new GitHubClient(token || undefined);
 
       await this.updateProgress(job, 15)
 
-      const fileTree = await github.getFileTree(owner, repoName, branch)
+      let fileTree
+      try {
+        fileTree = await github.getFileTree(owner, repoName, branch)
+      } catch (err: any) {
+        if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) {
+          try {
+            const repoData = await github.getRepo(owner, repoName)
+            if (repoData && repoData.default_branch && repoData.default_branch !== branch) {
+              this.log('branch_fallback', {
+                scanId, requestedBranch: branch, fallbackBranch: repoData.default_branch
+              })
+              fileTree = await github.getFileTree(owner, repoName, repoData.default_branch)
+              // Update scan record branch in DB to reflect actual branch scanned
+              await db.update(scans)
+                .set({ branch: repoData.default_branch, updatedAt: new Date() })
+                .where(eq(scans.id, scanId))
+            } else {
+              throw err
+            }
+          } catch (fallbackErr) {
+            throw err
+          }
+        } else {
+          throw err
+        }
+      }
 
       const ciFiles = fileTree.filter(file => {
+        if (file.type !== 'blob') return false
         const filePath = file.path
         if (ignorePaths && ignorePaths.some(p => filePath.includes(p))) return false
         return isCIFile(filePath)
@@ -221,7 +241,7 @@ export class ScanWorker {
         MAX_CONCURRENT_FILE_FETCHES,
         async (file): Promise<FileContent> => {
           const content = await github.getFileContent(
-            owner, repoName, file.path, branch
+            owner, repoName, file.path, branch, file.sha
           )
           await queueRedis.setex(`file-content:${scanId}:${file.path}`, 86400, content)
           fetchedCount++
@@ -415,12 +435,9 @@ export class ScanWorker {
       warnings = parsed.warnings
       parserNameActual = parsed.parser
     } else {
-      let token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN
-      if (!token) {
-        throw new Error(`No GitHub token for repo ${owner}/${repoName}.`)
-      }
-      const github = new GitHubClient(token)
-      const content = await github.getFileContent(owner, repoName, filePath, branch)
+      const token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN;
+      const github = new GitHubClient(token || undefined);
+      const content = await github.getFileContent(owner, repoName, filePath, branch, gitSha)
       await queueRedis.setex(`file-content:${scanId}:${filePath}`, 86400, content)
       
       try {

@@ -7,6 +7,7 @@ import { JobPriority } from "../queue/job.types";
 import { JobStatusTracker } from "../queue/job-status";
 import { randomUUID } from "crypto";
 import { AppError } from "../middleware/error-handler";
+import { guardFinding } from "../ai/file-output-guard";
 
 export interface LayerStatus {
   id: number;
@@ -137,9 +138,9 @@ export class PublicAnalyzer {
       .then((r) => r[0]);
 
     const repoId = scan.repoId;
-    const scanJobId = `scan:${repoId}:${scanId}`;
-    const analysisJobId = `analysis:${scanId}`;
-    const aiJobId = `ai:${scanId}`;
+    const scanJobId = `scan-${repoId}-${scanId}`;
+    const analysisJobId = `analysis-${scanId}`;
+    const aiJobId = `ai-${scanId}`;
 
     const [scanJob, analysisJob, aiJob, artifactsList, reportRecord, explanations, remediations] =
       await Promise.all([
@@ -519,6 +520,24 @@ export class PublicAnalyzer {
           const remediationFix = remediations.find((r) => r.ruleId === f.ruleId);
           const prediction = predictions.find((p) => p.ruleId === f.ruleId);
 
+          const patchObj = remediationFix
+            ? {
+                before: remediationFix.beforeCode || "",
+                after: remediationFix.afterCode || "",
+                language: remediationFix.language || "yaml",
+                instructions: remediationFix.instructions || "",
+                safe: remediationFix.safe ?? true,
+                warning: remediationFix.warning,
+                validatedByRuleEngine: true,
+              }
+            : null;
+
+          const guard = guardFinding({
+            ruleId: f.ruleId,
+            filePath: f.filePath,
+            patch: patchObj,
+          });
+
           return {
             id: f.id,
             ruleId: f.ruleId,
@@ -538,17 +557,14 @@ export class PublicAnalyzer {
                   confidence: explanation.urgency || "high",
                 }
               : null,
-            patch: remediationFix
+            patch: guard.displayPatch
               ? {
-                  before: remediationFix.beforeCode || "",
-                  after: remediationFix.afterCode || "",
-                  language: remediationFix.language || "yaml",
-                  instructions: remediationFix.instructions || "",
-                  safe: remediationFix.safe ?? true,
-                  warning: remediationFix.warning,
-                  validatedByRuleEngine: true,
+                  ...patchObj,
+                  after: guard.displayPatch.after,
                 }
-              : null,
+              : patchObj,
+            requiresManualReview: guard.requiresManualReview,
+            manualReviewReason: guard.manualReason,
           };
         });
 

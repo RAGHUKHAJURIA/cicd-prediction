@@ -1,0 +1,1 @@
+ALTER TABLE "ai_remediations" ADD COLUMN "confidence" text;

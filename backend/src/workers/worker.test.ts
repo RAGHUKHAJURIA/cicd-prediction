@@ -295,11 +295,11 @@ async function runTests() {
 
   // TEST 14
   const scanId = '550e8400-e29b-41d4-a716-446655440000'
-  const jobId1 = `scan:${scanId}:fetch`
-  const jobId2 = `scan:${scanId}:fetch`
+  const jobId1 = `scan-${scanId}-fetch`
+  const jobId2 = `scan-${scanId}-fetch`
   assert.strictEqual(jobId1, jobId2)
   const scanId2 = '660e8400-e29b-41d4-a716-446655440000'
-  const jobIdDiff = `scan:${scanId2}:fetch`
+  const jobIdDiff = `scan-${scanId2}-fetch`
   assert.notStrictEqual(jobId1, jobIdDiff)
   console.log('PASS: TEST 14')
 

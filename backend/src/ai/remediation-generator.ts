@@ -1,5 +1,7 @@
 import { geminiClient, GeminiClient } from './gemini-client';
 import { patchBuilder, PatchBuilder, PatchResult, DiffOutput } from './patch-builder';
+import { patchApplier, PatchApplier } from './patch-applier';
+import { guardFileContent } from './file-output-guard';
 import { tokenCounter } from './token-counter';
 import { AITaskType } from './ai-response.types';
 import { AIContext, AIFinding } from '../engine/report-builder';
@@ -49,8 +51,11 @@ export class RemediationGenerator {
 
   constructor(
     private client: GeminiClient = geminiClient,
-    private patches: PatchBuilder = patchBuilder
-  ) {}
+    private patches: PatchBuilder = patchBuilder,
+    private applier: PatchApplier = patchApplier
+  ) {
+    void this.applier;
+  }
 
   async generateForFinding(
     finding: AIFinding,
@@ -64,6 +69,27 @@ export class RemediationGenerator {
     );
 
     if (deterministicPatch && deterministicPatch.confidence === 'certain') {
+      const guarded = guardFileContent(
+        deterministicPatch.after,
+        deterministicPatch.before,
+        { filePath: finding.filePath, ruleId: finding.ruleId, source: 'remediation-generator' }
+      );
+      
+      return {
+        findingRuleId: finding.ruleId,
+        findingFilePath: finding.filePath,
+        severity: finding.severity,
+        patch: guarded.safe ? deterministicPatch : { ...deterministicPatch, after: guarded.content },
+        aiPatch: null,
+        diff: guarded.safe ? this.patches.buildDiff(deterministicPatch) : null,
+        validationStatus: guarded.safe ? ValidationStatus.VALID : ValidationStatus.SKIPPED,
+        finalRecommendation: guarded.safe ? guarded.content : `⚠️ MANUAL REVIEW REQUIRED:\n${guarded.content}`,
+        remediationSource: 'deterministic'
+      };
+    }
+
+    // Manual-review-required deterministic patches — return as suggestion only
+    if (deterministicPatch && deterministicPatch.confidence === 'manual-review-required' && !workflowContent) {
       return {
         findingRuleId: finding.ruleId,
         findingFilePath: finding.filePath,
@@ -71,8 +97,8 @@ export class RemediationGenerator {
         patch: deterministicPatch,
         aiPatch: null,
         diff: this.patches.buildDiff(deterministicPatch),
-        validationStatus: ValidationStatus.VALID,
-        finalRecommendation: deterministicPatch.after,
+        validationStatus: ValidationStatus.SKIPPED,
+        finalRecommendation: `⚠️ MANUAL REVIEW REQUIRED:\n${deterministicPatch.after}`,
         remediationSource: 'deterministic'
       };
     }
@@ -128,15 +154,25 @@ Rules:
     );
 
     if (result.success && result.data) {
+      const guarded = guardFileContent(
+        result.data.patchedContent,
+        finding.evidence || workflowContent,
+        { filePath: finding.filePath, ruleId: finding.ruleId, source: 'remediation-generator' }
+      );
+
       return {
         findingRuleId: finding.ruleId,
         findingFilePath: finding.filePath,
         severity: finding.severity,
         patch: deterministicPatch,
-        aiPatch: result.data,
-        diff: this.buildDiffFromAIPatch(workflowContent, result.data.patchedContent, finding.filePath, finding.ruleId),
-        validationStatus: ValidationStatus.SKIPPED,
-        finalRecommendation: result.data.patchedContent,
+        aiPatch: {
+          ...result.data,
+          patchedContent: guarded.content,
+          requiresManualReview: !guarded.safe || result.data.requiresManualReview
+        },
+        diff: guarded.safe ? this.buildDiffFromAIPatch(workflowContent, guarded.content, finding.filePath, finding.ruleId) : null,
+        validationStatus: guarded.safe ? ValidationStatus.VALID : ValidationStatus.SKIPPED,
+        finalRecommendation: guarded.safe ? guarded.content : `⚠️ MANUAL REVIEW REQUIRED:\n${guarded.content}`,
         remediationSource: deterministicPatch ? 'hybrid' : 'ai-generated'
       };
     }

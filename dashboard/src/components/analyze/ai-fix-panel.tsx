@@ -6,15 +6,22 @@ import { CopyFixButton } from "./copy-fix-button";
 export function AIFixPanel({
   finding,
   aiReport,
+  fileContent = null,
+  fileName = "file",
   onClose,
 }: {
   finding: InlineFinding | null;
   aiReport: AIExecutiveReport | null;
-  allFindings: InlineFinding[];
+  allFindings?: InlineFinding[];
+  fileContent?: string | null;
+  fileName?: string;
   onClose: () => void;
 }) {
   const [techDetailOpen, setTechDetailOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
+  const [fixTab, setFixTab] = useState<"diff" | "file">("diff");
+  const [copiedFile, setCopiedFile] = useState(false);
+  const [copiedSuggested, setCopiedSuggested] = useState(false);
 
   const getHealthColor = (grade: string | undefined) => {
     switch (grade) {
@@ -24,6 +31,103 @@ export function AIFixPanel({
       case "F": return { bg: "rgba(248,81,73,0.06)", border: "rgba(248,81,73,0.2)" };
       default: return { bg: "rgba(210,153,34,0.06)", border: "rgba(210,153,34,0.2)" };
     }
+  };
+
+  const getUpdatedContent = () => {
+    if (!fileContent || !finding?.patch) return "";
+    const before = finding.patch.before;
+    const after = finding.patch.after;
+    if (!before || !fileContent.includes(before)) {
+      return fileContent;
+    }
+    const idx = fileContent.indexOf(before);
+    return fileContent.substring(0, idx) + after + fileContent.substring(idx + before.length);
+  };
+
+  const handleCopyFile = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedFile(true);
+      setTimeout(() => setCopiedFile(false), 1500);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const renderDiff = () => {
+    if (!finding?.patch) return null;
+    const before = finding.patch.before;
+    const after = finding.patch.after;
+    
+    // If we don't have fileContent or before is empty/not found, show snippet-only diff
+    if (!fileContent || !before || !fileContent.includes(before)) {
+      const beforeLines = before ? before.split("\n") : [];
+      const afterLines = after ? after.split("\n") : [];
+      return (
+        <div className="bg-[#0d1117] border border-[#21262d] rounded-md overflow-hidden font-mono text-[12px] leading-snug">
+          <pre className="p-3 overflow-x-auto whitespace-pre max-h-[300px] custom-scrollbar m-0">
+            {beforeLines.map((line, i) => (
+              <div key={`b-${i}`} className="flex text-[#ff7b72] bg-[#f85149]/10 px-2 py-0.5 rounded-sm">
+                <span className="w-5 text-[#f85149]/50 select-none mr-1">-</span>
+                {line}
+              </div>
+            ))}
+            {afterLines.map((line, i) => (
+              <div key={`a-${i}`} className="flex text-[#56d364] bg-[#3fb950]/10 px-2 py-0.5 rounded-sm">
+                <span className="w-5 text-[#3fb950]/50 select-none mr-1">+</span>
+                {line}
+              </div>
+            ))}
+          </pre>
+        </div>
+      );
+    }
+
+    const idx = fileContent.indexOf(before);
+    const prefix = fileContent.substring(0, idx);
+    const suffix = fileContent.substring(idx + before.length);
+
+    const prefixLines = prefix.split("\n");
+    if (prefixLines.length > 0 && prefixLines[prefixLines.length - 1] === "" && prefix.endsWith("\n")) {
+      prefixLines.pop();
+    }
+    const beforeLines = before.split("\n");
+    const afterLines = after.split("\n");
+    const suffixLines = suffix.split("\n");
+    if (suffixLines.length > 0 && suffixLines[0] === "" && suffix.startsWith("\n")) {
+      suffixLines.shift();
+    }
+
+    return (
+      <div className="bg-[#0d1117] border border-[#21262d] rounded-md overflow-hidden font-mono text-[12px] leading-snug">
+        <pre className="p-3 overflow-x-auto whitespace-pre max-h-[300px] custom-scrollbar m-0">
+          {prefixLines.map((line, i) => (
+            <div key={`p-${i}`} className="flex text-[#8b949e] opacity-75 px-2">
+              <span className="w-5 text-[#8b949e]/30 select-none mr-1"> </span>
+              {line}
+            </div>
+          ))}
+          {beforeLines.map((line, i) => (
+            <div key={`b-${i}`} className="flex text-[#ff7b72] bg-[#f85149]/15 px-2 py-0.5 border-l-2 border-[#f85149]">
+              <span className="w-5 text-[#f85149]/60 select-none mr-1">-</span>
+              {line}
+            </div>
+          ))}
+          {afterLines.map((line, i) => (
+            <div key={`a-${i}`} className="flex text-[#56d364] bg-[#3fb950]/15 px-2 py-0.5 border-l-2 border-[#3fb950]">
+              <span className="w-5 text-[#3fb950]/60 select-none mr-1">+</span>
+              {line}
+            </div>
+          ))}
+          {suffixLines.map((line, i) => (
+            <div key={`s-${i}`} className="flex text-[#8b949e] opacity-75 px-2">
+              <span className="w-5 text-[#8b949e]/30 select-none mr-1"> </span>
+              {line}
+            </div>
+          ))}
+        </pre>
+      </div>
+    );
   };
 
   if (!finding) {
@@ -186,78 +290,246 @@ export function AIFixPanel({
           </div>
         ) : null}
 
-        <div className="text-[11px] uppercase tracking-widest text-[#6e7681] m-[20px_0_6px] font-medium">The fix</div>
-        {finding.patch ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="bg-[#f85149]/15 text-[#f85149] text-[10px] uppercase px-1.5 py-0.5 rounded font-medium">Before</span>
+        {finding.requiresManualReview ? (
+          <div className="mt-4 p-4 border border-[#d29922]/30 bg-[#d29922]/5 rounded-md space-y-4">
+            <div className="flex items-center gap-2 text-[#d29922] font-semibold text-xs">
+              <AlertTriangle className="w-4 h-4 text-[#d29922]" />
+              <span>This fix requires manual review</span>
+            </div>
+            <div className="text-[12px] text-[#8b949e]">
+              Reason: {finding.manualReviewReason || 'Contains unresolved placeholder tokens'}
+            </div>
+            
+            {finding.patch && finding.patch.before && (
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-semibold text-[#8b949e] uppercase">Current code</div>
+                <div className="border border-[#21262d] rounded-md overflow-hidden bg-[#0d1117] font-mono text-[12px] leading-snug">
+                  <pre className="p-3 overflow-x-auto whitespace-pre bg-[#0d1117] text-[#c9d1d9] max-h-[150px] m-0">
+                    {finding.patch.before}
+                  </pre>
+                </div>
               </div>
-              <div className="bg-[#f85149]/5 border border-[#f85149]/20 rounded-md p-2.5 overflow-x-auto">
-                <pre className="font-mono text-[12px] text-[#ffa198] m-0">
-                  {finding.patch.before.split('\n').map((l, i) => (
-                    <div key={i} className={l.startsWith('-') ? "text-[#f85149] bg-[#f85149]/10" : ""}>{l}</div>
-                  ))}
-                </pre>
+            )}
+            
+            {finding.patch && finding.patch.after && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider">Suggested code (contains placeholders)</div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(finding.patch?.after || '');
+                        setCopiedSuggested(true);
+                        setTimeout(() => setCopiedSuggested(false), 1500);
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] text-[#58a6ff] hover:text-[#e6edf3] transition-colors"
+                  >
+                    {copiedSuggested ? (
+                      <>
+                        <Check className="w-3 h-3 text-[#3fb950] animate-bounce" />
+                        <span className="text-[#3fb950] font-medium">Copied Code!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="border border-[#d29922]/30 rounded-md overflow-hidden bg-[#0d1117] font-mono text-[12px] leading-snug shadow-inner">
+                  <pre className="p-3 overflow-x-auto whitespace-pre bg-[#0d1117] text-[#c9d1d9] max-h-[200px] m-0">
+                    {finding.patch.after.split('\n').map((line: string, l: number) => (
+                      <div key={`a-${l}`} className="flex px-2 rounded-sm select-all hover:bg-[#21262d]/50">{line}</div>
+                    ))}
+                  </pre>
+                </div>
+              </div>
+            )}
+            
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-semibold text-[#8b949e] uppercase">Instructions</div>
+              <div className="text-[12px] text-[#8b949e] bg-[#0d1117] p-3 rounded-md border border-[#21262d] leading-relaxed whitespace-pre-wrap">
+                {finding.patch?.instructions || finding.remediation || 'No plain-English instructions available.'}
               </div>
             </div>
 
-            <div className="flex flex-col mt-2">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="bg-[#3fb950]/15 text-[#3fb950] text-[10px] uppercase px-1.5 py-0.5 rounded font-medium">After</span>
-                <span className="text-[#3fb950] text-[10px] flex items-center gap-0.5"><Check className="w-3 h-3"/> Fixed</span>
-              </div>
-              <div className="bg-[#3fb950]/5 border border-[#3fb950]/20 rounded-md p-2.5 overflow-x-auto">
-                <pre className="font-mono text-[12px] text-[#56d364] m-0">
-                  {finding.patch.after.split('\n').map((l, i) => (
-                    <div key={i} className={l.startsWith('+') ? "text-[#3fb950] bg-[#3fb950]/10" : ""}>{l}</div>
-                  ))}
-                </pre>
-              </div>
+            <div className="pt-1 flex items-center gap-4 flex-wrap">
+              {finding.ruleId === 'security-unpinned-action' && (
+                <a
+                  href={(() => {
+                    const evidence = finding.patch?.before || finding.description || '';
+                    const clean = evidence.replace(/['"`\s]/g, '').trim();
+                    const match = clean.match(/([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_.]+)(?:\/([a-zA-Z0-9-_.]+))?@?([a-zA-Z0-9-_.]+)?/);
+                    if (match) {
+                      const owner = match[1];
+                      const repo = match[2];
+                      const ref = match[4] || 'v3';
+                      return `https://github.com/${owner}/${repo}/commits/${ref}`;
+                    }
+                    return 'https://github.com/snyk/actions/node/commits/v3';
+                  })()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-[#a371f7] hover:underline font-medium"
+                >
+                  Find the commit SHA on GitHub <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+              {finding.patch && finding.patch.after && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(finding.patch?.after || '');
+                      setCopiedSuggested(true);
+                      setTimeout(() => setCopiedSuggested(false), 1500);
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }}
+                  className="text-[12px] text-[#a371f7] hover:text-[#b48bf8] flex items-center gap-1.5"
+                >
+                  {copiedSuggested ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-[#3fb950]" />
+                      <span className="text-[#3fb950] font-medium">Copied code!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy suggested code</span>
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(finding.patch?.instructions || finding.remediation || '');
+                    setCopiedFile(true);
+                    setTimeout(() => setCopiedFile(false), 1500);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                className="text-[12px] text-[#58a6ff] hover:text-[#e6edf3] flex items-center gap-1.5"
+              >
+                {copiedFile ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-[#3fb950]" />
+                    <span className="text-[#3fb950] font-medium">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy instructions</span>
+                  </>
+                )}
+              </button>
             </div>
-
-            <div className="mt-2">
-              {finding.patch.safe && finding.patch.validatedByRuleEngine ? (
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#3fb950]" />
-                  <span className="text-[12px] text-[#3fb950]">Validated by rule engine</span>
-                </div>
-              ) : finding.patch.warning ? (
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-[#d29922]" />
-                  <span className="text-[12px] text-[#d29922]">{finding.patch.warning}</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <Eye className="w-3.5 h-3.5 text-[#db6d28]" />
-                  <span className="text-[12px] text-[#db6d28]">Review before applying</span>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between m-[20px_0_10px] shrink-0">
+              <div className="text-[11px] uppercase tracking-widest text-[#6e7681] font-medium">The fix</div>
+              {finding.patch && fileContent && (
+                <div className="flex bg-[#0d1117] p-0.5 rounded border border-[#21262d] text-[11px]">
+                  <button
+                    onClick={() => setFixTab("diff")}
+                    className={`px-2 py-0.5 rounded transition-colors ${fixTab === "diff" ? "bg-[#21262d] text-white animate-fade-in" : "text-[#8b949e] hover:text-[#e6edf3]"}`}
+                  >
+                    Diff View
+                  </button>
+                  <button
+                    onClick={() => setFixTab("file")}
+                    className={`px-2 py-0.5 rounded transition-colors ${fixTab === "file" ? "bg-[#21262d] text-white animate-fade-in" : "text-[#8b949e] hover:text-[#e6edf3]"}`}
+                  >
+                    Full File
+                  </button>
                 </div>
               )}
             </div>
 
-            <CopyFixButton patch={finding.patch} ruleId={finding.ruleId} />
+            {finding.patch ? (
+              <div className="flex flex-col gap-2 animate-fade-in">
+                {fixTab === "diff" || !fileContent ? (
+                  renderDiff()
+                ) : (
+                  <div className="flex flex-col">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-[11px] text-[#8b949e] truncate max-w-[250px]">Full updated file content ({fileName})</span>
+                      <button
+                        onClick={() => handleCopyFile(getUpdatedContent())}
+                        className="text-[11px] text-[#58a6ff] hover:text-[#e6edf3] flex items-center gap-1"
+                      >
+                        {copiedFile ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-[#3fb950]" />
+                            <span className="text-[#3fb950] font-medium">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy full file</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="bg-[#0d1117] border border-[#21262d] rounded-md p-2.5 overflow-x-auto max-h-[300px] custom-scrollbar">
+                      <pre className="font-mono text-[12px] text-[#e6edf3] m-0">
+                        {getUpdatedContent()}
+                      </pre>
+                    </div>
+                  </div>
+                )}
 
-            {finding.patch.instructions && (
-              <div className="mt-4">
-                <button
-                  onClick={() => setHowToOpen(!howToOpen)}
-                  className="flex items-center gap-1 text-[13px] text-[#8b949e] hover:text-[#e6edf3]"
-                >
-                  <ChevronRight className={`w-4 h-4 transition-transform ${howToOpen ? "rotate-90" : ""}`} />
-                  How to apply this fix
-                </button>
-                {howToOpen && (
-                  <div className="mt-2 p-3 bg-[#0d1117] rounded border border-[#21262d] text-[12px] text-[#8b949e] whitespace-pre-wrap">
-                    {finding.patch.instructions}
+                <div className="mt-2">
+                  {finding.patch.safe && finding.patch.validatedByRuleEngine ? (
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#3fb950]" />
+                      <span className="text-[12px] text-[#3fb950]">Validated by rule engine</span>
+                    </div>
+                  ) : finding.patch.warning ? (
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-[#d29922]" />
+                      <span className="text-[12px] text-[#d29922]">{finding.patch.warning}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 text-[#db6d28]" />
+                      <span className="text-[12px] text-[#db6d28]">Review before applying</span>
+                    </div>
+                  )}
+                </div>
+
+                <CopyFixButton patch={finding.patch} ruleId={finding.ruleId} />
+
+                {finding.patch.instructions && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setHowToOpen(!howToOpen)}
+                      className="flex items-center gap-1 text-[13px] text-[#8b949e] hover:text-[#e6edf3]"
+                    >
+                      <ChevronRight className={`w-4 h-4 transition-transform ${howToOpen ? "rotate-90" : ""}`} />
+                      How to apply this fix
+                    </button>
+                    {howToOpen && (
+                      <div className="mt-2 p-3 bg-[#0d1117] rounded border border-[#21262d] text-[12px] text-[#8b949e] whitespace-pre-wrap">
+                        {finding.patch.instructions}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+            ) : (
+              <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-3 text-[13px] text-[#8b949e]">
+                {finding.remediation || "No automated fix available. Please review manually."}
+              </div>
             )}
-          </div>
-        ) : (
-          <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-3 text-[13px] text-[#8b949e]">
-            {finding.remediation || "No automated fix available. Please review manually."}
-          </div>
+          </>
         )}
 
       </div>

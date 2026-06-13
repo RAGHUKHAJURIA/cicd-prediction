@@ -50,7 +50,7 @@ export const scanQueueClient = {
       SCAN_JOBS.FETCH_AND_PARSE,
       payload,
       {
-        jobId: `scan:${payload.scanId}:fetch`,
+        jobId: `scan-${payload.scanId}-fetch`,
         priority: payload.priority,
         ...opts
       }
@@ -66,7 +66,7 @@ export const scanQueueClient = {
       SCAN_JOBS.RESCAN,
       payload,
       {
-        jobId: `scan:${payload.newScanId}:rescan`,
+        jobId: `scan-${payload.newScanId}-rescan`,
         priority: payload.priority,
         ...opts
       }
@@ -82,7 +82,7 @@ export const scanQueueClient = {
       SCAN_JOBS.PARSE_SINGLE,
       payload,
       {
-        jobId: `scan:${payload.scanId}:parse:${payload.gitSha}`,
+        jobId: `scan-${payload.scanId}-parse-${payload.gitSha}`,
         ...opts
       }
     )
@@ -142,7 +142,7 @@ export const analysisQueueClient = {
       ANALYSIS_JOBS.RUN_RULES,
       payload,
       {
-        jobId: `analysis:${payload.scanId}:rules`,
+        jobId: `analysis-${payload.scanId}-rules`,
         priority: JobPriority.HIGH,
         ...opts
       }
@@ -158,7 +158,7 @@ export const analysisQueueClient = {
       ANALYSIS_JOBS.SCORE_RISK,
       payload,
       {
-        jobId: `analysis:${payload.scanId}:score`,
+        jobId: `analysis-${payload.scanId}-score`,
         ...opts
       }
     )
@@ -173,7 +173,7 @@ export const analysisQueueClient = {
       ANALYSIS_JOBS.BUILD_REPORT,
       payload,
       {
-        jobId: `analysis:${payload.scanId}:report`,
+        jobId: `analysis-${payload.scanId}-report`,
         ...opts
       }
     )
@@ -226,7 +226,7 @@ export const aiQueueClient = {
       AI_JOBS.EXPLAIN_SCAN,
       payload,
       {
-        jobId: `ai:${payload.scanId}:explain-scan`,
+        jobId: `ai-${payload.scanId}-explain-scan`,
         priority: JobPriority.NORMAL,
         ...opts
       }
@@ -242,7 +242,7 @@ export const aiQueueClient = {
       AI_JOBS.EXPLAIN_FINDING,
       payload,
       {
-        jobId: `ai:${payload.scanId}:explain:${payload.findingId}`,
+        jobId: `ai-${payload.scanId}-explain-${payload.findingId}`,
         ...opts
       }
     )
@@ -257,7 +257,7 @@ export const aiQueueClient = {
       AI_JOBS.PREDICT_FAILURES,
       payload,
       {
-        jobId: `ai:${payload.scanId}:predict`,
+        jobId: `ai-${payload.scanId}-predict`,
         ...opts
       }
     )
@@ -272,7 +272,7 @@ export const aiQueueClient = {
       AI_JOBS.GENERATE_REMEDIATIONS,
       payload,
       {
-        jobId: `ai:${payload.scanId}:remediate`,
+        jobId: `ai-${payload.scanId}-remediate`,
         ...opts
       }
     )
@@ -287,7 +287,7 @@ export const aiQueueClient = {
       AI_JOBS.FULL_AI_REPORT,
       payload,
       {
-        jobId: `ai:${payload.scanId}:full-report`,
+        jobId: `ai-${payload.scanId}-full-report`,
         priority: JobPriority.LOW,
         ...opts
       }

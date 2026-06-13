@@ -65,7 +65,7 @@ export function Sidebar() {
         </div>
 
         <div className="flex flex-col gap-0.5">
-          {repos.slice(0, 10).map((repo) => {
+          {(Array.isArray(repos) ? repos : []).slice(0, 10).map((repo) => {
             const isActive = pathname.startsWith(`/repos/${repo.id}`);
             const hoursSince = repo.lastScannedAt ? differenceInHours(new Date(), new Date(repo.lastScannedAt)) : null;
             const statusColor = hoursSince === null ? 'bg-fg-subtle' : hoursSince < 1 ? 'bg-success' : hoursSince < 24 ? 'bg-warning' : 'bg-danger';

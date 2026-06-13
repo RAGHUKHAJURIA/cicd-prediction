@@ -5,6 +5,7 @@ export * from './prompt-builder';
 export * from './explanation-engine';
 export * from './failure-predictor';
 export * from './patch-builder';
+export * from './patch-applier';
 export * from './remediation-generator';
 export * from './guardrail';
 export * from './output-validator';
@@ -16,6 +17,7 @@ export {
   explanationEngine,
   failurePredictor,
   patchBuilder,
+  patchApplier,
   remediationGenerator,
   guardrail,
   strictGuardrail,

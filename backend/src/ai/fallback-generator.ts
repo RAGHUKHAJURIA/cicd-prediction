@@ -49,7 +49,7 @@ export class FallbackGenerator {
 
     let instruction = fallbackData.instruction;
     if (ruleId === 'security-unpinned-action') {
-      const match = finding.evidence.match(/^([^@]+)@(.*)$/);
+      const match = (finding.evidence || '').match(/^([^@]+)@(.*)$/);
       if (match) {
         const [_, ownerRepo, tag] = match;
         const parts = ownerRepo.split('/');
@@ -58,7 +58,7 @@ export class FallbackGenerator {
           .replace(/{tag}/g, tag);
       }
     } else if (ruleId === 'reliability-floating-docker-tag') {
-      const img = finding.evidence.replace(/:latest$/, '');
+      const img = (finding.evidence || '').replace(/:latest$/, '');
       instruction = instruction.replace(/{image}/g, img);
     }
 
