@@ -15,6 +15,7 @@ import { scans, findings, parsedArtifacts, aiExplanations, aiRemediations, aiPre
 import { eq } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import type { AIContext, AIFinding } from '../engine/report-builder'
+import { onScanCompleted } from '../github-app/webhook-handler'
 import { WorkerName, WorkerStatus, WORKER_CONCURRENCY, LOG_EVENTS, AIPipelineResult, WorkerHealth } from './worker.types'
 
 export class AIWorker {
@@ -235,6 +236,11 @@ export class AIWorker {
         updatedAt:           new Date()
       })
       .where(eq(scans.id, scanId))
+
+    setImmediate(() => onScanCompleted(scanId).catch(err =>
+      console.error('[github-app] onScanCompleted error:', err)
+    ))
+
 
     await this.updateProgress(job, 100)
 

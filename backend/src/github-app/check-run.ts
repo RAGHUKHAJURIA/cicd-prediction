@@ -1,104 +1,120 @@
-import { GitHubAppAuth } from './app-config';
-import { GateConfig } from '../integrations/gates/deployment-gate';
+import { githubAppAuth } from './app-auth';
+import { formatCheckRunSummary } from './comment-formatter';
 
-export class CheckRunManager {
-  constructor(private auth: GitHubAppAuth) {}
+export interface TopFinding {
+  ruleId: string;
+  title: string;
+  severity: string;
+  filePath: string;
+}
 
-  async createCheckRun(
-    owner: string,
-    repo: string,
-    headSha: string,
-    installationId: number
-  ): Promise<number> {
-    const octokit = await this.auth.getInstallationOctokit(installationId);
+class CheckRunManager {
+  async create(params: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    headSha: string;
+    name?: string;
+  }): Promise<number> {
+    const octokit = await githubAppAuth.getInstallationOctokit(params.installationId);
     
     const { data } = await octokit.rest.checks.create({
-      owner,
-      repo,
-      name: 'CI/CD Reliability Analysis',
-      head_sha: headSha,
+      owner: params.owner,
+      repo: params.repo,
+      name: params.name ?? 'CI/CD Reliability Analysis',
+      head_sha: params.headSha,
       status: 'in_progress',
+      started_at: new Date().toISOString(),
     });
-
+    
     return data.id;
   }
 
-  async updateCheckRun(
-    owner: string,
-    repo: string,
-    checkRunId: number,
-    scan: any,
-    installationId: number,
-    gateConfig: GateConfig,
-    dashboardUrl: string
-  ): Promise<void> {
-    const octokit = await this.auth.getInstallationOctokit(installationId);
-    
-    let conclusion: 'success' | 'failure' | 'neutral' = 'neutral';
-    let title = `⚠️ Grade ${scan.riskGrade} — review recommended`;
-    let summary = 'Review findings before merging.';
+  async complete(params: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    checkRunId: number;
+    grade: string;
+    score: number;
+    criticalCount: number;
+    highCount: number;
+    topFindings: TopFinding[];
+    blockOnGrade: string | null;
+    dashboardUrl: string;
+    scanId: string;
+    repoId: string;
+  }): Promise<void> {
+    const octokit = await githubAppAuth.getInstallationOctokit(params.installationId);
 
-    const isBlocked = gateConfig.enabled && gateConfig.blockOnGrades.includes(scan.riskGrade as any);
-    
-    if (isBlocked || (gateConfig.enabled && gateConfig.blockOnCritical && scan.criticalCount > 0) || (gateConfig.enabled && scan.riskScore > gateConfig.maxScore)) {
-      conclusion = 'failure';
-      title = `⛔ Pipeline blocked — risk grade ${scan.riskGrade}`;
-      summary = 'Critical reliability issues must be resolved before this PR can be merged.';
-    } else if (scan.riskGrade === 'A' || scan.riskGrade === 'B') {
-      conclusion = 'success';
-      title = '✅ Pipeline reliability check passed';
-      summary = 'No critical or high issues found.';
-    }
+    const gradeValue: Record<string, number> = { A: 5, B: 4, C: 3, D: 2, F: 1 };
+    const scanGrade = params.grade.toUpperCase();
+    const limitGrade = params.blockOnGrade ? params.blockOnGrade.toUpperCase() : null;
 
-    const text = `
-## CI/CD Reliability Analysis Result
+    const shouldBlock = limitGrade !== null &&
+      (gradeValue[scanGrade] ?? 0) <= (gradeValue[limitGrade] ?? 0);
 
-**Risk Grade**: ${scan.riskGrade} | **Score**: ${scan.riskScore}/100
+    const conclusion = shouldBlock
+      ? 'failure'
+      : (scanGrade === 'A' || scanGrade === 'B' ? 'success' : 'neutral');
 
-| Severity | Count |
-|----------|-------|
-| 🔴 Critical | ${scan.criticalCount} |
-| 🟠 High | ${scan.highCount} |
-| 🟡 Medium | ${scan.mediumCount} |
-| 🔵 Low | ${scan.lowCount} |
+    const totalFindings = params.criticalCount + params.highCount; // or total findings count
+    const title = shouldBlock
+      ? `⛔ Pipeline blocked — Grade ${params.grade}, Score ${params.score}/100`
+      : (scanGrade === 'A' || scanGrade === 'B')
+        ? `✅ Grade ${params.grade} — ${totalFindings} major findings`
+        : `⚠️ Grade ${params.grade} — review recommended`;
 
-[View full report](${dashboardUrl}/repos/${scan.repoId}/scans/${scan.id})
-    `;
+    const { summary, text } = formatCheckRunSummary({
+      grade: params.grade,
+      score: params.score,
+      criticalCount: params.criticalCount,
+      highCount: params.highCount,
+      topFindings: params.topFindings,
+      dashboardUrl: params.dashboardUrl,
+      scanId: params.scanId,
+      repoId: params.repoId
+    });
 
     await octokit.rest.checks.update({
-      owner,
-      repo,
-      check_run_id: checkRunId,
+      owner: params.owner,
+      repo: params.repo,
+      check_run_id: params.checkRunId,
       status: 'completed',
+      completed_at: new Date().toISOString(),
       conclusion,
       output: {
         title,
         summary,
-        text,
+        text
       }
     });
   }
 
-  async failCheckRun(
-    owner: string,
-    repo: string,
-    checkRunId: number,
-    error: string,
-    installationId: number
-  ): Promise<void> {
-    const octokit = await this.auth.getInstallationOctokit(installationId);
+  async fail(params: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    checkRunId: number;
+    error: string;
+  }): Promise<void> {
+    const octokit = await githubAppAuth.getInstallationOctokit(params.installationId);
     
     await octokit.rest.checks.update({
-      owner,
-      repo,
-      check_run_id: checkRunId,
+      owner: params.owner,
+      repo: params.repo,
+      check_run_id: params.checkRunId,
       status: 'completed',
-      conclusion: 'failure',
+      completed_at: new Date().toISOString(),
+      conclusion: 'cancelled',
       output: {
-        title: '❌ Analysis Failed',
-        summary: 'An error occurred during analysis.',
-        text: `Error details: \`${error}\``
+        title: 'CI/CD Reliability Analysis — scan failed',
+        summary: params.error,
+        text: `The automated scan encountered an unexpected error:\n\n\`\`\`\n${params.error}\n\`\`\``
       }
     });
   }
 }
+
+export const checkRunManager = new CheckRunManager();
+export default checkRunManager;

@@ -15,6 +15,7 @@ import { WorkerName, WorkerStatus, WORKER_CONCURRENCY, LOG_EVENTS, AnalysisPipel
 import { randomUUID } from 'crypto'
 import type { NormalizedWorkflow } from '../models/workflow.model'
 import type { RuleSeverity } from '../rules/types'
+import { onScanCompleted } from '../github-app/webhook-handler'
 
 const AI_SCORE_THRESHOLD = 40
 
@@ -267,6 +268,9 @@ export class AnalysisWorker {
       await db.update(scans)
         .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
         .where(eq(scans.id, scanId))
+      setImmediate(() => onScanCompleted(scanId).catch(err =>
+        console.error('[github-app] onScanCompleted error:', err)
+      ))
       this.log('scan_completed_no_ai', {
         scanId, score: analysisReport.summary.score
       })

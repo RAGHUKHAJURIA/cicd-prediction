@@ -1,57 +1,78 @@
-import { GitHubAppAuth } from './app-config';
+import { githubAppAuth } from './app-auth';
 
-export class PRCommenter {
-  constructor(private auth: GitHubAppAuth) {}
+class PRCommenter {
+  async postOrUpdate(params: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    prNumber: number;
+    repoId: string;
+    commentBody: string;
+  }): Promise<number> {
+    const octokit = await githubAppAuth.getInstallationOctokit(params.installationId);
 
-  async postOrUpdateComment(
-    owner: string,
-    repo: string,
-    prNumber: number,
-    installationId: number,
-    commentBody: string
-  ): Promise<void> {
-    const octokit = await this.auth.getInstallationOctokit(installationId);
-
-    // List existing comments
+    // List all PR comments (up to 100)
     const { data: comments } = await octokit.rest.issues.listComments({
-      owner,
-      repo,
-      issue_number: prNumber,
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.prNumber,
+      per_page: 100
     });
 
-    // Find the one we created previously
-    const existingComment = comments.find(comment => 
-      comment.body?.includes('<!-- cicd-reliability-report -->')
-    );
+    const marker = `<!-- cicd-reliability-scan-${params.repoId} -->`;
+    const existing = comments.find(c => c.body?.includes(marker));
 
-    if (existingComment) {
+    if (existing) {
       await octokit.rest.issues.updateComment({
-        owner,
-        repo,
-        comment_id: existingComment.id,
-        body: commentBody,
+        owner: params.owner,
+        repo: params.repo,
+        comment_id: existing.id,
+        body: params.commentBody
       });
+      return existing.id;
     } else {
-      await octokit.rest.issues.createComment({
-        owner,
-        repo,
-        issue_number: prNumber,
-        body: commentBody,
+      const { data } = await octokit.rest.issues.createComment({
+        owner: params.owner,
+        repo: params.repo,
+        issue_number: params.prNumber,
+        body: params.commentBody
       });
+      return data.id;
     }
   }
 
-  async deleteComment(
-    owner: string,
-    repo: string,
-    commentId: number,
-    installationId: number
-  ): Promise<void> {
-    const octokit = await this.auth.getInstallationOctokit(installationId);
-    await octokit.rest.issues.deleteComment({
-      owner,
-      repo,
-      comment_id: commentId,
+  async deleteOurComments(params: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    prNumber: number;
+    repoId: string;
+  }): Promise<void> {
+    const octokit = await githubAppAuth.getInstallationOctokit(params.installationId);
+
+    const { data: comments } = await octokit.rest.issues.listComments({
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.prNumber,
+      per_page: 100
     });
+
+    const marker = `<!-- cicd-reliability-scan-${params.repoId} -->`;
+    const ourComments = comments.filter(c => c.body?.includes(marker));
+
+    for (const comment of ourComments) {
+      try {
+        await octokit.rest.issues.deleteComment({
+          owner: params.owner,
+          repo: params.repo,
+          comment_id: comment.id
+        });
+      } catch (err: any) {
+        console.error(`[PRCommenter] Failed to delete comment ${comment.id}:`, err.message);
+      }
+    }
   }
 }
+
+export const prCommenter = new PRCommenter();
+export default prCommenter;

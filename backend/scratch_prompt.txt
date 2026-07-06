@@ -1,0 +1,1525 @@
+<USER_REQUEST>
+I am building a CI/CD Reliability Intelligence Platform in TypeScript.
+I have a fully working system:
+
+MONOREPO STRUCTURE:
+  /backend   — Express.js, TypeScript strict, port 3000
+  /dashboard — Next.js 14, TypeScript strict, port 3001
+
+WHAT IS ALREADY BUILT AND WORKING (do not touch):
+- Session auth: cicd.sid cookie (express-session + bcrypt)
+- GitHub OAuth: user login, access token encrypted in DB
+  via backend/src/lib/tokenCrypto.ts (AES-256-GCM)
+- Web app scan flow: paste URL → scan pipeline → results with patches
+- 26 rules, risk scorer A-F, Claude AI patches
+- BullMQ + Redis: scan-queue, analysis-queue, ai-queue
+- All existing routes: /api/repos, /api/scans, /api/analyze,
+  /api/github/repos, /api/github/actions
+- Guardrail: validates patches, placeholder detection
+- Dashboard: /repos, /analyze, /settings, /queue pages
+
+THE TASK:
+Build Mode 2 — GitHub App integration.
+This is a completely separate delivery mode from the web app.
+When a user installs the GitHub App on their repository:
+  1. Every push to any branch → webhook fires → scan runs
+  2. Scan completes → findings posted as PR check run (pass/fail)
+  3. If scan was triggered by a PR → comment posted on the PR
+  4. If fixes are available → patch file committed to a new branch
+  5. If auto-PR is enabled → PR opened with fixes applied
+
+DO NOT TOUCH anything listed in "WHAT IS ALREADY BUILT".
+All new code is purely additive.
+Mount new routes AFTER existing routes in app.ts.
+
+---
+
+## ENVIRONMENT VARIABLES TO ADD
+
+Add these to .env and .env.example:
+
+GITHUB_APP_ID=
+  — Numeric ID from your GitHub App settings page
+  — Example: 123456
+
+GITHUB_APP_PRIVATE_KEY=
+  — PEM private key, base64-encoded for env storage
+  — Generate: base64 -w 0 private-key.pem
+  — In code: Buffer.from(process.env.GITHUB_APP_PRIVATE_KEY, 'base64').toString()
+
+GITHUB_APP_WEBHOOK_SECRET=
+  — Random string you set when creating the GitHub App
+  — Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+GITHUB_APP_SLUG=
+  — The URL slug of your app (from GitHub App settings)
+  — Example: cicd-reliability-bot
+
+GITHUB_APP_CLIENT_ID=
+  — OAuth client ID for the App (from GitHub App settings)
+
+GITHUB_APP_CLIENT_SECRET=
+  — OAuth client secret for the App
+
+DASHBOARD_URL=http://localhost:3001
+  — Already exists, needed for PR comment links
+
+---
+
+## FILES TO BUILD
+
+backend/src/github-app/
+  app-auth.ts          ← JWT generation + installation token
+  webhook-handler.ts   ← route all webhook events
+  event-processors/
+    push.processor.ts  ← handle push events
+    pr.processor.ts    ← handle pull_request events
+    install.processor.ts ← handle installation events
+  pr-commenter.ts      ← post/update PR comments
+  check-run.ts         ← create/update GitHub Check Runs
+  patch-committer.ts   ← commit patch files to repos
+  auto-pr-creator.ts   ← open PRs with fixes
+  comment-formatter.ts ← build GitHub-flavored markdown
+
+backend/src/routes/
+  github-app.routes.ts ← webhook receiver + setup endpoints
+
+backend/src/db/
+  github-app-schema.ts ← new tables (additive to existing schema)
+  migrations/
+    add-github-app-tables.sql
+
+dashboard/src/app/(dashboard)/settings/github-app/
+  page.tsx             ← GitHub App settings page
+
+dashboard/src/components/settings/
+  github-app-settings.tsx
+  installation-status.tsx
+  auto-pr-toggle.tsx
+
+---
+
+## ═══════════════════════════════════════════════════
+## DATABASE — backend/src/db/github-app-schema.ts
+## ═══════════════════════════════════════════════════
+
+New tables only. Do NOT modify existing schema.ts.
+Import and register these tables in your Drizzle config
+alongside the existing schema.
+
+### Table 1: github_app_installations
+
+Stores each installation of the GitHub App on a user's org/repo.
+
+export const githubAppInstallations = pgTable(
+  'github_app_installations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    installationId: integer('installation_id').unique().notNull(),
+      — GitHub's installation ID (from webhook payload)
+      — This is the key used to generate installation tokens
+
+    accountLogin: varchar('account_login', { length: 255 }).notNull(),
+      — GitHub username or org name that installed the app
+
+    accountType: varchar('account_type', { length: 50 }).notNull(),
+      — 'User' or 'Organization'
+
+    accountAvatarUrl: varchar('account_avatar_url', { length: 500 }),
+
+    userId: uuid('user_id').references(() => users.id, {
+      onDelete: 'set null'
+    }),
+      — platform user who owns this installation (nullable —
+        someone can install the app before signing into platform)
+
+    appId: integer('app_id').notNull(),
+      — GitHub App ID (from GITHUB_APP_ID env)
+
+    repositorySelection: varchar('repository_selection',
+      { length: 50 }).notNull().default('selected'),
+      — 'all' or 'selected'
+
+    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+      — set if installation is suspended
+
+    installedAt: timestamp('installed_at', { withTimezone: true })
+      .notNull().defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull().defaultNow(),
+  }
+)
+
+### Table 2: github_app_repos
+
+Repos accessible via a specific installation.
+One installation can cover many repos.
+
+export const githubAppRepos = pgTable(
+  'github_app_repos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    installationId: integer('installation_id').notNull()
+      .references(() => githubAppInstallations.installationId,
+        { onDelete: 'cascade' }),
+
+    githubRepoId: integer('github_repo_id').notNull(),
+      — GitHub's internal numeric repo ID
+
+    owner: varchar('owner', { length: 255 }).notNull(),
+
+    repoName: varchar('repo_name', { length: 255 }).notNull(),
+
+    fullName: varchar('full_name', { length: 512 }).notNull(),
+      — "owner/repo-name"
+
+    private: boolean('private').notNull().default(false),
+
+    defaultBranch: varchar('default_branch', { length: 255 })
+      .notNull().default('main'),
+
+    repoId: uuid('repo_id').references(() => repos.id, {
+      onDelete: 'set null'
+    }),
+      — link to our repos table if this repo has been imported
+
+    autoScanEnabled: boolean('auto_scan_enabled')
+      .notNull().default(true),
+      — if false, push events are ignored for this repo
+
+    autoPrEnabled: boolean('auto_pr_enabled')
+      .notNull().default(false),
+      — if true, automatically create fix PRs after scan
+
+    blockOnGrade: varchar('block_on_grade', { length: 5 }),
+      — 'D', 'F', or null (do not block)
+      — if scan grade <= this, check run set to 'failure'
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull().defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqInstallationRepo: uniqueIndex(
+      'github_app_repos_installation_repo_unique'
+    ).on(table.installationId, table.githubRepoId),
+  })
+)
+
+### Table 3: github_app_events
+
+Audit log of all webhook events received and processed.
+
+export const githubAppEvents = pgTable(
+  'github_app_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    deliveryId: varchar('delivery_id', { length: 255 }).unique(),
+      — from x-github-delivery header, for deduplication
+
+    eventType: varchar('event_type', { length: 100 }).notNull(),
+      — 'push', 'pull_request', 'installation', etc.
+
+    action: varchar('action', { length: 100 }),
+      — 'opened', 'synchronize', 'created', 'deleted', etc.
+
+    installationId: integer('installation_id'),
+
+    repoFullName: varchar('repo_full_name', { length: 512 }),
+
+    senderLogin: varchar('sender_login', { length: 255 }),
+
+    scanId: uuid('scan_id'),
+      — if this event triggered a scan
+
+    checkRunId: bigint('check_run_id', { mode: 'number' }),
+      — GitHub check run ID created for this event
+
+    prNumber: integer('pr_number'),
+
+    status: varchar('status', { length: 50 })
+      .notNull().default('received'),
+      — 'received', 'processing', 'completed', 'failed', 'skipped'
+
+    errorMessage: text('error_message'),
+
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull().defaultNow(),
+  }
+)
+
+### Migration file: add-github-app-tables.sql
+
+CREATE TABLE IF NOT EXISTS github_app_installations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  installation_id INTEGER UNIQUE NOT NULL,
+  account_login VARCHAR(255) NOT NULL,
+  account_type VARCHAR(50) NOT NULL,
+  account_avatar_url VARCHAR(500),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  app_id INTEGER NOT NULL,
+  repository_selection VARCHAR(50) NOT NULL DEFAULT 'selected',
+  suspended_at TIMESTAMPTZ,
+  installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS github_app_repos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  installation_id INTEGER NOT NULL
+    REFERENCES github_app_installations(installation_id)
+    ON DELETE CASCADE,
+  github_repo_id INTEGER NOT NULL,
+  owner VARCHAR(255) NOT NULL,
+  repo_name VARCHAR(255) NOT NULL,
+  full_name VARCHAR(512) NOT NULL,
+  private BOOLEAN NOT NULL DEFAULT FALSE,
+  default_branch VARCHAR(255) NOT NULL DEFAULT 'main',
+  repo_id UUID REFERENCES repos(id) ON DELETE SET NULL,
+  auto_scan_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  auto_pr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  block_on_grade VARCHAR(5),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(installation_id, github_repo_id)
+);
+
+CREATE TABLE IF NOT EXISTS github_app_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  delivery_id VARCHAR(255) UNIQUE,
+  event_type VARCHAR(100) NOT NULL,
+  action VARCHAR(100),
+  installation_id INTEGER,
+  repo_full_name VARCHAR(512),
+  sender_login VARCHAR(255),
+  scan_id UUID,
+  check_run_id BIGINT,
+  pr_number INTEGER,
+  status VARCHAR(50) NOT NULL DEFAULT 'received',
+  error_message TEXT,
+  processed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_github_app_events_delivery
+  ON github_app_events(delivery_id);
+CREATE INDEX idx_github_app_events_installation
+  ON github_app_events(installation_id);
+CREATE INDEX idx_github_app_repos_installation
+  ON github_app_repos(installation_id);
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/app-auth.ts
+## ═══════════════════════════════════════════════════
+
+Handles GitHub App authentication: JWT generation for app-level
+calls and installation access tokens for repo-level calls.
+
+import { App } from '@octokit/app'
+import { Octokit } from '@octokit/rest'
+import { createAppAuth } from '@octokit/auth-app'
+
+class GitHubAppAuth {
+
+  private app: App
+  private tokenCache: Map<number, {
+    token: string
+    expiresAt: Date
+  }> = new Map()
+
+  constructor() {
+    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY
+    const appId = process.env.GITHUB_APP_ID
+
+    if (!privateKey || !appId) {
+      console.warn(
+        '[GitHubAppAuth] GitHub App not configured — ' +
+        'GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY env vars missing.'
+      )
+      return
+    }
+
+    const decodedKey = Buffer.from(privateKey, 'base64').toString('utf8')
+
+    this.app = new App({
+      appId: parseInt(appId),
+      privateKey: decodedKey,
+      webhooks: {
+        secret: process.env.GITHUB_APP_WEBHOOK_SECRET ?? ''
+      },
+    })
+  }
+
+  isConfigured(): boolean
+    return !!this.app
+
+  async getInstallationOctokit(
+    installationId: number
+  ): Promise<Octokit>
+    PURPOSE: Get an authenticated Octokit for a specific
+    installation. Caches tokens until 5 minutes before expiry.
+
+    IMPLEMENTATION:
+    1. Check cache:
+       const cached = this.tokenCache.get(installationId)
+       const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000)
+       if (cached && cached.expiresAt > fiveMinutesFromNow) {
+         return new Octokit({ auth: cached.token })
+       }
+
+    2. Request fresh token:
+       const octokit = await this.app.getInstallationOctokit(
+         installationId
+       )
+       Cache the token with expiry.
+       Return octokit.
+
+    3. If token request fails:
+       throw new AppError(401,
+         `Cannot get token for installation ${installationId}`,
+         'GITHUB_APP_AUTH_FAILED'
+       )
+
+  async getAppOctokit(): Promise<Octokit>
+    — Returns app-level (not installation-level) Octokit
+    — Used for endpoints like /app/installations
+
+  verifyWebhookSignature(
+    payload: string | Buffer,
+    signature: string
+  ): boolean
+    HMAC-SHA256 verification using GITHUB_APP_WEBHOOK_SECRET.
+    Return false (do NOT throw) if signature invalid —
+    the route handler decides what HTTP response to send.
+
+    const sig = signature.startsWith('sha256=')
+      ? signature : `sha256=${signature}`
+    const expected = 'sha256=' + crypto
+      .createHmac('sha256', process.env.GITHUB_APP_WEBHOOK_SECRET ?? '')
+      .update(payload)
+      .digest('hex')
+    return crypto.timingSafeEqual(
+      Buffer.from(sig),
+      Buffer.from(expected)
+    )
+
+  getAppInstallUrl(): string
+    return `https://github.com/apps/${
+      process.env.GITHUB_APP_SLUG ?? 'cicd-reliability'
+    }/installations/new`
+
+}
+
+export const githubAppAuth = new GitHubAppAuth()
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/comment-formatter.ts
+## ═══════════════════════════════════════════════════
+
+Builds all GitHub-flavored Markdown for PR comments and
+check run summaries. Pure functions, no side effects.
+
+export function formatPRComment(params: {
+  scanId: string
+  repoId: string
+  grade: string
+  score: number
+  totalFindings: number
+  criticalCount: number
+  highCount: number
+  mediumCount: number
+  lowCount: number
+  branch: string
+  findings: Array<{
+    ruleId: string
+    title: string
+    severity: string
+    filePath: string
+    line: number | null
+  }>
+  hasAutoFixes: boolean
+  hasPR: boolean
+  prUrl?: string
+  dashboardUrl: string
+  scanTimestamp: string
+}): string
+
+  Build this exact markdown structure:
+
+  --- TOP MARKER (used to find and update existing comment) ---
+  <!-- cicd-reliability-scan-{repoId} -->
+
+  ## CI/CD Reliability Analysis {grade_emoji}
+
+  **Risk Grade: {GRADE}** | Score: {score}/100 | Branch: `{branch}`
+
+  ---
+
+  ### Summary
+
+  | Severity | Count |
+  |----------|-------|
+  | 🔴 Critical | {criticalCount} |
+  | 🟠 High | {highCount} |
+  | 🟡 Medium | {mediumCount} |
+  | 🔵 Low | {lowCount} |
+
+  ---
+
+  ### {N} Findings
+
+  (show max 10 findings to keep comment readable)
+  | Severity | Rule | File | Line |
+  |----------|------|------|------|
+  | 🔴 Critical | `security-unpinned-action` | `.github/workflows/ci.yml` | 14 |
+  ...
+  (if more than 10: "+ N more findings — view full report")
+
+  ---
+
+  (if hasAutoFixes && !hasPR)
+  ### 🔧 Fixes available
+  Run a scan from the dashboard to generate a PR with automatic fixes.
+  [View full report →]({dashboardUrl}/repos/{repoId}/scans/{scanId})
+
+  (if hasPR)
+  ### 🔧 Fix PR created
+  [View fix PR →]({prUrl}) | [View full report →]({dashboardUrl}/repos/{repoId}/scans/{scanId})
+
+  (if !hasAutoFixes)
+  [View full report →]({dashboardUrl}/repos/{repoId}/scans/{scanId})
+
+  ---
+  <details>
+  <summary>About this report</summary>
+  Scan ID: `{scanId}` · Generated: {timestamp} · Powered by CI/CD Reliability Platform
+  </details>
+  <!-- cicd-reliability-scan-end -->
+
+  grade_emoji:
+    A → ✅, B → 🟢, C → 🟡, D → 🟠, F → 🔴
+
+export function formatCheckRunSummary(params: {
+  grade: string
+  score: number
+  criticalCount: number
+  highCount: number
+  topFindings: Array<{ ruleId: string, title: string,
+    severity: string, filePath: string }>
+  dashboardUrl: string
+  scanId: string
+  repoId: string
+}): { title: string, summary: string, text: string }
+
+  Returns:
+  title: "CI/CD Reliability: Grade {GRADE} ({score}/100)"
+  summary: one paragraph overview with counts
+  text: full markdown table of top findings + dashboard link
+
+export function formatPRBody(params: {
+  scanId: string
+  grade: string
+  score: number
+  appliedFixes: Array<{ ruleId: string, filePath: string }>
+  manualFixes: Array<{
+    ruleId: string
+    filePath: string
+    guidance: string
+    referenceUrl?: string
+  }>
+  patchBranch: string
+  baseBranch: string
+  dashboardUrl: string
+  repoId: string
+}): string
+
+  Build PR body with:
+  - What was scanned and grade/score
+  - "## Automatically applied fixes" table
+  - "## Manual review needed" table with guidance
+  - Link to full dashboard report
+  - Note: "Generated by CI/CD Reliability Platform"
+
+export function formatNoFixesPRBody(params: {
+  scanId: string
+  grade: string
+  findings: Array<{ ruleId: string, title: string, severity: string }>
+  dashboardUrl: string
+  repoId: string
+}): string
+  — Used when only manual fixes exist (no file changes in PR)
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/check-run.ts
+## ═══════════════════════════════════════════════════
+
+Manages GitHub Check Runs for push/PR events.
+Check runs appear in the GitHub PR "Checks" tab and
+can block merges if configured as required status checks.
+
+import { githubAppAuth } from './app-auth'
+import { commentFormatter } from './comment-formatter'
+
+class CheckRunManager {
+
+  async create(params: {
+    installationId: number
+    owner: string
+    repo: string
+    headSha: string
+    name?: string
+  }): Promise<number>
+    — Create a check run in 'in_progress' status
+    — name defaults to 'CI/CD Reliability Analysis'
+    — Returns checkRunId
+
+    const octokit = await githubAppAuth.getInstallationOctokit(
+      params.installationId
+    )
+    const { data } = await octokit.rest.checks.create({
+      owner: params.owner,
+      repo: params.repo,
+      name: params.name ?? 'CI/CD Reliability Analysis',
+      head_sha: params.headSha,
+      status: 'in_progress',
+      started_at: new Date().toISOString(),
+    })
+    return data.id
+
+  async complete(params: {
+    installationId: number
+    owner: string
+    repo: string
+    checkRunId: number
+    grade: string
+    score: number
+    criticalCount: number
+    highCount: number
+    topFindings: TopFinding[]
+    blockOnGrade: string | null
+    dashboardUrl: string
+    scanId: string
+    repoId: string
+  }): Promise<void>
+
+    CONCLUSION LOGIC:
+    1. Determine if this should block the PR:
+       const gradeValue = { A: 5, B: 4, C: 3, D: 2, F: 1 }
+       const shouldBlock = params.blockOnGrade !== null &&
+         gradeValue[params.grade] <=
+         gradeValue[params.blockOnGrade]
+
+    2. Build conclusion:
+       const conclusion = shouldBlock ? 'failure'
+         : params.grade === 'A' || params.grade === 'B'
+           ? 'success'
+           : 'neutral'
+
+    3. Build title:
+       shouldBlock:
+         "⛔ Pipeline blocked — Grade ${grade}, Score ${score}/100"
+       grade A/B:
+         "✅ Grade ${grade} — ${totalFindings} findings"
+       else:
+         "⚠️ Grade ${grade} — review recommended"
+
+    4. Get summary from commentFormatter.formatCheckRunSummary()
+
+    5. Update check run:
+       await octokit.rest.checks.update({
+         owner, repo, check_run_id: checkRunId,
+         status: 'completed',
+         completed_at: new Date().toISOString(),
+         conclusion,
+         output: { title, summary, text }
+       })
+
+  async fail(params: {
+    installationId: number
+    owner: string
+    repo: string
+    checkRunId: number
+    error: string
+  }): Promise<void>
+    — Mark check run as failed with error message
+    conclusion: 'cancelled'
+    title: 'CI/CD Reliability Analysis — scan failed'
+    summary: error message
+
+}
+
+export const checkRunManager = new CheckRunManager()
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/pr-commenter.ts
+## ═══════════════════════════════════════════════════
+
+Posts and updates PR comments.
+Finds existing comment by marker tag to avoid duplicate comments.
+
+class PRCommenter {
+
+  async postOrUpdate(params: {
+    installationId: number
+    owner: string
+    repo: string
+    prNumber: number
+    repoId: string
+    commentBody: string
+  }): Promise<number>
+    — Post new comment or UPDATE existing one (never duplicate)
+
+    IMPLEMENTATION:
+    1. Get octokit for installation
+    2. List all PR comments:
+       const { data: comments } =
+         await octokit.rest.issues.listComments({
+           owner, repo, issue_number: prNumber, per_page: 100
+         })
+    3. Find our comment by marker:
+       const existing = comments.find(c =>
+         c.body?.includes(
+           `<!-- cicd-reliability-scan-${repoId} -->`
+         )
+       )
+    4a. If exists: UPDATE it
+       await octokit.rest.issues.updateComment({
+         owner, repo,
+         comment_id: existing.id,
+         body: commentBody
+       })
+       return existing.id
+    4b. If not exists: CREATE it
+       const { data } = await octokit.rest.issues.createComment({
+         owner, repo,
+         issue_number: prNumber,
+         body: commentBody
+       })
+       return data.id
+
+  async deleteOurComments(params: {
+    installationId: number
+    owner: string
+    repo: string
+    prNumber: number
+    repoId: string
+  }): Promise<void>
+    — Used when installation is removed or repo is disconnected
+    — Find all our comments and delete them
+
+}
+
+export const prCommenter = new PRCommenter()
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/patch-committer.ts
+## ═══════════════════════════════════════════════════
+
+Commits patch documentation files to the user's repo.
+IMPORTANT: Only commits .md documentation files.
+NEVER commits actual workflow files directly (that's auto-pr-creator).
+
+import { guardFileContent } from '../ai/file-output-guard'
+
+class PatchCommitter {
+
+  async commitPatchDoc(params: {
+    installationId: number
+    owner: string
+    repo: string
+    branch: string
+    scanId: string
+    manualFixes: ManualFixInstruction[]
+    appliedFixes: Array<{ ruleId: string, filePath: string }>
+  }): Promise<{ commitUrl: string, commitSha: string }>
+
+    PURPOSE: Commit a .md documentation file explaining all
+    findings and fixes to .github/cicd-reliability/patches.md
+
+    IMPLEMENTATION:
+    1. Get octokit
+    2. Build markdown content:
+       const content = this.buildPatchDoc(params)
+       — documentation markdown, placeholders are OK in .md files
+         (they are instructional text, not code)
+
+    3. Check if file exists to get SHA for update:
+       let existingSha: string | undefined
+       try {
+         const existing = await octokit.rest.repos.getContent({
+           owner, repo,
+           path: '.github/cicd-reliability/patches.md',
+           ref: branch
+         })
+         existingSha = (existing.data as { sha: string }).sha
+       } catch { }
+
+    4. Commit the file:
+       const { data } =
+         await octokit.rest.repos.createOrUpdateFileContents({
+           owner, repo,
+           path: '.github/cicd-reliability/patches.md',
+           message: `docs: CI/CD reliability findings for scan
+             ${params.scanId.slice(0, 8)}`,
+           content: Buffer.from(content).toString('base64'),
+           branch,
+           sha: existingSha,
+           committer: {
+             name: 'CI/CD Reliability Bot',
+             email: 'bot@cicd-reliability.io'
+           }
+         })
+    5. Return { commitUrl: data.commit.html_url, commitSha: data.commit.sha }
+
+  private buildPatchDoc(params): string
+    — Build full markdown document
+    — Sections: Overview, Auto-applied fixes, Manual review needed
+    — For each manual fix: currentCode, guidance, referenceUrl
+    — Clearly mark examples as examples, never as paste-ready code
+
+}
+
+export const patchCommitter = new PatchCommitter()
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/auto-pr-creator.ts
+## ═══════════════════════════════════════════════════
+
+Creates branches with actual code fixes applied and opens PRs.
+THIS IS WHERE REAL FILE CHANGES HAPPEN — must be bulletproof.
+
+import { guardFileContent, containsPlaceholder } from '../ai/file-output-guard'
+import { patchApplier } from '../ai/patch-applier'
+
+class AutoPRCreator {
+
+  async createFixPR(params: {
+    installationId: number
+    owner: string
+    repo: string
+    baseBranch: string
+    scanId: string
+    repoId: string
+    fileRemediations: FileRemediationResult[]
+      — from RemediationGenerator.generateForScan()
+    manualFixes: ManualFixInstruction[]
+  }): Promise<{
+    prUrl: string
+    prNumber: number
+    headBranch: string
+    filesChanged: number
+    skippedFiles: string[]
+  } | null>
+    — Returns null if no safe fixes available and no PR should
+      be created (callers must handle null gracefully)
+
+    IMPLEMENTATION:
+
+    STEP 1 — Filter to files with safe auto-fixes:
+      const safeFiles = params.fileRemediations.filter(f =>
+        f.hasAutoFixes &&
+        f.validationPassed &&
+        f.fixedContent !== f.originalContent
+      )
+
+      if (safeFiles.length === 0 && params.manualFixes.length === 0) {
+        return null  — nothing to do
+      }
+
+    STEP 2 — Create patch branch:
+      const branchName = `cicd-reliability/fixes-${
+        params.scanId.slice(0, 8)
+      }`
+      — Get baseBranch HEAD SHA:
+      const { data: baseRef } = await octokit.rest.git.getRef({
+        owner, repo,
+        ref: `heads/${params.baseBranch}`
+      })
+      — Create branch:
+      try {
+        await octokit.rest.git.createRef({
+          owner, repo,
+          ref: `refs/heads/${branchName}`,
+          sha: baseRef.object.sha
+        })
+      } catch (err) {
+        if (err.status === 422) {
+          — Branch already exists, add timestamp suffix
+          branchName = `cicd-reliability/fixes-${
+            params.scanId.slice(0, 8)
+          }-${Date.now()}`
+          — retry createRef with new name
+        } else throw err
+      }
+
+    STEP 3 — Commit each safe fixed file:
+      THE FINAL GUARD — runs for every single file:
+
+      const skippedFiles: string[] = []
+      const committedFiles: string[] = []
+
+      for (const fileResult of safeFiles) {
+        — MANDATORY: final placeholder check before any commit
+        if (containsPlaceholder(fileResult.fixedContent)) {
+          console.error(
+            `[auto-pr-creator] CRITICAL: placeholder found in ` +
+            `fixedContent for ${fileResult.filePath} — skipping. ` +
+            `This should have been caught by an earlier guard.`
+          )
+          skippedFiles.push(fileResult.filePath)
+          continue
+        }
+
+        — Get current file SHA for update:
+        let currentFileSha: string | undefined
+        try {
+          const { data } = await octokit.rest.repos.getContent({
+            owner, repo,
+            path: fileResult.filePath,
+            ref: branchName
+          })
+          currentFileSha = (data as { sha: string }).sha
+        } catch { }
+
+        — Commit the file:
+        try {
+          await octokit.rest.repos.createOrUpdateFileContents({
+            owner, repo,
+            path: fileResult.filePath,
+            message: `fix(${fileResult.filePath}): apply CI/CD ` +
+              `reliability fixes [${
+                fileResult.appliedPatchRuleIds.join(', ')
+              }]`,
+            content: Buffer.from(
+              fileResult.fixedContent
+            ).toString('base64'),
+            branch: branchName,
+            sha: currentFileSha,
+            committer: {
+              name: 'CI/CD Reliability Bot',
+              email: 'bot@cicd-reliability.io'
+            }
+          })
+          committedFiles.push(fileResult.filePath)
+        } catch (err) {
+          console.error(
+            `[auto-pr-creator] Failed to commit ${fileResult.filePath}:`,
+            err.message
+          )
+          skippedFiles.push(fileResult.filePath)
+        }
+      }
+
+    STEP 4 — Commit patch documentation:
+      Always commit the patches.md regardless of whether files changed,
+      so the PR has at least one commit even if all auto-fixes failed:
+      await patchCommitter.commitPatchDoc({
+        installationId: params.installationId,
+        owner, repo,
+        branch: branchName,
+        scanId: params.scanId,
+        manualFixes: params.manualFixes,
+        appliedFixes: safeFiles.map(f => ({
+          ruleId: f.appliedPatchRuleIds.join(', '),
+          filePath: f.filePath
+        }))
+      })
+
+    STEP 5 — Open the PR:
+      const prBody = committedFiles.length > 0
+        ? formatPRBody({ ...params, appliedFixes: ..., headBranch: branchName })
+        : formatNoFixesPRBody({ ...params })
+
+      const { data: pr } = await octokit.rest.pulls.create({
+        owner, repo,
+        title: committedFiles.length > 0
+          ? `fix: CI/CD reliability improvements ` +
+            `(${committedFiles.length} file${
+              committedFiles.length > 1 ? 's' : ''
+            } fixed)`
+          : `docs: CI/CD reliability findings — manual review needed`,
+        body: prBody,
+        head: branchName,
+        base: params.baseBranch,
+        maintainer_can_modify: true
+      })
+
+      — Try to add labels (ignore if labels don't exist):
+      try {
+        await octokit.rest.issues.addLabels({
+          owner, repo,
+          issue_number: pr.number,
+          labels: ['ci/cd', 'reliability', 'automated']
+        })
+      } catch { }
+
+    STEP 6 — Return:
+      return {
+        prUrl: pr.html_url,
+        prNumber: pr.number,
+        headBranch: branchName,
+        filesChanged: committedFiles.length,
+        skippedFiles
+      }
+
+}
+
+export const autoPRCreator = new AutoPRCreator()
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — event processors
+## ═══════════════════════════════════════════════════
+
+### backend/src/github-app/event-processors/install.processor.ts
+
+export async function processInstallationEvent(payload: {
+  action: string
+  installation: {
+    id: number
+    account: { login: string, type: string, avatar_url: string }
+    app_id: number
+    repository_selection: string
+    suspended_at: string | null
+  }
+  repositories?: Array<{
+    id: number
+    name: string
+    full_name: string
+    private: boolean
+  }>
+  sender: { login: string }
+}): Promise<void>
+
+  HANDLE action === 'created':
+    1. Upsert into github_app_installations:
+       INSERT ... ON CONFLICT (installation_id) DO UPDATE
+    2. For each repository in payload.repositories:
+       Upsert into github_app_repos
+    3. Log: installation {id} created for {account.login}
+
+  HANDLE action === 'deleted':
+    1. Update github_app_installations:
+       Set suspendedAt = now (soft delete, keep for audit)
+    2. Update related github_app_repos:
+       Set autoScanEnabled = false
+
+  HANDLE action === 'repositories_added':
+    1. Insert new repos into github_app_repos
+
+  HANDLE action === 'repositories_removed':
+    1. Remove repos from github_app_repos
+
+  HANDLE action === 'suspend':
+    Update installation.suspendedAt = now
+
+  HANDLE action === 'unsuspend':
+    Update installation.suspendedAt = null
+
+### backend/src/github-app/event-processors/push.processor.ts
+
+export async function processPushEvent(payload: {
+  ref: string
+  after: string
+  before: string
+  commits: Array<{
+    id: string
+    modified: string[]
+    added: string[]
+    removed: string[]
+  }>
+  repository: {
+    id: number
+    name: string
+    full_name: string
+    private: boolean
+    default_branch: string
+    owner: { login: string }
+  }
+  installation: { id: number }
+  sender: { login: string }
+}, deliveryId: string): Promise<void>
+
+  STEP 1 — Check if this push touches CI/CD files:
+    const cicdPatterns = [
+      '.github/workflows/',
+      '.gitlab-ci.yml',
+      'Dockerfile',
+      'docker-compose',
+      'Jenkinsfile',
+      'k8s/',
+      'kubernetes/',
+      'helm/',
+    ]
+    const changedFiles = payload.commits.flatMap(c => [
+      ...c.modified, ...c.added
+    ])
+    const hasCicdChanges = changedFiles.some(f =>
+      cicdPatterns.some(p => f.includes(p) || f === p)
+    )
+
+    If NOT hasCicdChanges:
+      Log: "Push event skipped — no CI/CD files changed"
+      Update event status = 'skipped'
+      return
+
+  STEP 2 — Ignore branch deletions:
+    if (payload.after === '0000000000000000000000000000000000000000') {
+      Update event status = 'skipped'
+      return
+    }
+
+  STEP 3 — Check if repo is configured in github_app_repos:
+    const appRepo = await db.select().from(githubAppRepos)
+      .where(and(
+        eq(githubAppRepos.installationId, payload.installation.id),
+        eq(githubAppRepos.githubRepoId, payload.repository.id)
+      ))
+
+    If not found or !appRepo[0].autoScanEnabled:
+      Update event status = 'skipped'
+      return
+
+  STEP 4 — Find or create platform repo record:
+    let repoRecord = appRepo[0].repoId
+      ? await db.select().from(repos).where(eq(repos.id, appRepo[0].repoId))
+      : null
+
+    If no repoRecord:
+      — Auto-register the repo on first scan:
+      [repoRecord] = await db.insert(repos).values({
+        id: crypto.randomUUID(),
+        repoUrl: `https://github.com/${payload.repository.full_name}`,
+        name: payload.repository.full_name,
+        provider: 'github',
+        owner: payload.repository.owner.login,
+        repoName: payload.repository.name,
+        defaultBranch: payload.repository.default_branch,
+        status: 'active',
+        totalScans: 0,
+        settings: { autoScanOnPush: true }
+      }).returning()
+      — Link back to github_app_repos:
+      await db.update(githubAppRepos)
+        .set({ repoId: repoRecord.id })
+        .where(eq(githubAppRepos.id, appRepo[0].id))
+
+  STEP 5 — Cache installation token in Redis:
+    The ScanWorker fetches files using GitHub API. It needs a token.
+    Store the installation token in Redis under the same key
+    the scan worker already looks for:
+    const octokit = await githubAppAuth.getInstallationOctokit(
+      payload.installation.id
+    )
+    — Extract the installation token from octokit's auth:
+    — Store in Redis: temp-token:{repoId} with 24hr TTL
+    — This reuses the EXISTING mechanism scan.worker.ts already
+      has for token lookup — zero changes to scan worker needed
+
+  STEP 6 — Create check run (in_progress) if this push is on a branch
+    associated with any open PRs:
+    try {
+      const prList = await octokit.rest.pulls.list({
+        owner: payload.repository.owner.login,
+        repo: payload.repository.name,
+        state: 'open',
+        head: `${payload.repository.owner.login}:${
+          payload.ref.replace('refs/heads/', '')
+        }`
+      })
+      if (prList.data.length > 0) {
+        checkRunId = await checkRunManager.create({
+          installationId: payload.installation.id,
+          owner: payload.repository.owner.login,
+          repo: payload.repository.name,
+          headSha: payload.after
+        })
+      }
+    } catch { }
+
+  STEP 7 — Trigger scan via existing scan route logic:
+    (DO NOT call the HTTP route — call the service directly)
+    const scanId = crypto.randomUUID()
+    await db.insert(scans).values({
+      id: scanId,
+      repoId: repoRecord.id,
+      status: 'running',
+      branch: payload.ref.replace('refs/heads/', ''),
+      triggeredAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      totalFiles: 0, totalFindings: 0,
+      criticalCount: 0, highCount: 0,
+      mediumCount: 0, lowCount: 0,
+    })
+
+    const job = await scanQueue.add('scan-repo', {
+      scanId,
+      repoId: repoRecord.id,
+      repoUrl: `https://github.com/${payload.repository.full_name}`,
+      owner: payload.repository.owner.login,
+      repoName: payload.repository.name,
+      branch: payload.ref.replace('refs/heads/', ''),
+      triggeredBy: 'github-app-push',
+      installationId: payload.installation.id,
+      headSha: payload.after,
+      checkRunId,
+    })
+
+  STEP 8 — Register the onScanComplete callback:
+    Store { scanId, installationId, owner, repo, checkRunId,
+            prNumbers (from open PRs found above),
+            appRepoConfig: appRepo[0] }
+    in Redis as scan-app-context:{scanId} TTL 24hrs
+    So the scan completion handler can retrieve this context.
+
+  STEP 9 — Update github_app_events record:
+    status = 'processing', scanId = scanId, checkRunId = checkRunId
+
+### backend/src/github-app/event-processors/pr.processor.ts
+
+export async function processPREvent(payload: {
+  action: string
+  number: number
+  pull_request: {
+    head: { sha: string, ref: string }
+    base: { ref: string }
+    title: string
+    user: { login: string }
+  }
+  repository: {
+    id: number
+    name: string
+    full_name: string
+    owner: { login: string }
+  }
+  installation: { id: number }
+}, deliveryId: string): Promise<void>
+
+  Only process: opened, synchronize, reopened
+  Ignore: closed, merged, labeled, etc.
+
+  STEP 1 — Same setup as push.processor:
+    Find appRepo record, verify autoScanEnabled,
+    find/create platform repoRecord,
+    cache installation token in Redis.
+
+  STEP 2 — Create check run in_progress:
+    checkRunId = await checkRunManager.create({
+      installationId: payload.installation.id,
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+      headSha: payload.pull_request.head.sha
+    })
+
+  STEP 3 — Trigger scan (same as push.processor STEP 7)
+    branch = payload.pull_request.head.ref
+
+  STEP 4 — Store scan context in Redis with prNumber:
+    scan-app-context:{scanId} = {
+      ..., prNumber: payload.number,
+      headSha: payload.pull_request.head.sha
+    }
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/github-app/webhook-handler.ts
+## ═══════════════════════════════════════════════════
+
+This is the brain of the GitHub App. It is called AFTER a scan
+completes (from the AI worker or analysis worker) and orchestrates
+all the post-scan actions: update check run, comment on PR,
+optionally create a fix PR.
+
+export async function onScanCompleted(scanId: string): Promise<void>
+  — Called by ai.worker.ts at the END of processJob,
+    AFTER scan.status is set to 'completed'
+  — This function must be called from ai.worker.ts
+    (one additive line — see WIRING section below)
+
+  STEP 1 — Load scan app context from Redis:
+    const contextJson = await redis.get(`scan-app-context:${scanId}`)
+    if (!contextJson) return
+      — This scan was not triggered by the GitHub App
+      — No action needed
+    const context = JSON.parse(contextJson)
+
+  STEP 2 — Load scan results from DB:
+    const scan = ... (fetch scan + findings + analysis_reports + ai_remediations + ai_explanations)
+    If scan not found or status !== 'completed': return
+
+  STEP 3 — Get octokit:
+    const octokit = await githubAppAuth.getInstallationOctokit(
+      context.installationId
+    )
+
+  STEP 4 — Update check run:
+    await checkRunManager.complete({
+      installationId: context.installationId,
+      owner: context.owner,
+      repo: context.repo,
+      checkRunId: context.checkRunId,
+      grade: scan.grade,
+      score: scan.score,
+      criticalCount: scan.criticalCount,
+      highCount: scan.highCount,
+      topFindings: scan.findings.slice(0, 5),
+      blockOnGrade: context.appRepoConfig.blockOnGrade,
+      dashboardUrl: process.env.DASHBOARD_URL,
+      scanId,
+      repoId: scan.repoId
+    })
+
+  STEP 5 — Build remediations:
+    const remediationReport = await remediationGenerator.generateForScan(...)
+    — This already exists from Phase 3
+    — Reuse it here
+
+  STEP 6 — Post PR comment (if this scan was triggered by a PR):
+    if (context.prNumber) {
+      const commentBody = formatPRComment({
+        scanId, repoId: scan.repoId,
+        grade: scan.grade, score: scan.score,
+        ...scan.counts,
+        branch: scan.branch,
+        findings: scan.findings.slice(0, 10),
+        hasAutoFixes: remediationReport.remediations.some(
+          r => r.hasAutoFixes
+        ),
+        hasPR: false,
+        dashboardUrl: process.env.DASHBOARD_URL,
+        scanTimestamp: new Date().toISOString()
+      })
+
+      await prCommenter.postOrUpdate({
+        installationId: context.installationId,
+        owner: context.owner,
+        repo: context.repo,
+        prNumber: context.prNumber,
+        repoId: scan.repoId,
+        commentBody
+      })
+    }
+
+  STEP 7 — Auto-create fix PR (if enabled for this repo):
+    if (context.appRepoConfig.autoPrEnabled) {
+      const prResult = await autoPRCreator.createFixPR({
+        installationId: context.installationId,
+        owner: context.owner,
+        repo: context.repo,
+        baseBranch: scan.branch,
+        scanId,
+        repoId: scan.repoId,
+        fileRemediations: remediationReport.fileRemediations ?? [],
+        manualFixes: remediationReport.remediations.flatMap(
+          r => r.manualFixes ?? []
+        )
+      })
+
+      — If PR was created AND this scan was from a PR:
+      — Update the PR comment with the fix PR link
+      if (prResult && context.prNumber) {
+        const updatedComment = formatPRComment({
+          ...sameParamsAsAbove,
+          hasAutoFixes: true,
+          hasPR: true,
+          prUrl: prResult.prUrl
+        })
+        await prCommenter.postOrUpdate({
+          ...sameParamsAsAbove,
+          commentBody: updatedComment
+        })
+      }
+    }
+
+  STEP 8 — Clean up Redis:
+    await redis.del(`scan-app-context:${scanId}`)
+
+  STEP 9 — Update github_app_events record:
+    await db.update(githubAppEvents)
+      .set({ status: 'completed', processedAt: new Date() })
+      .where(eq(githubAppEvents.scanId, scanId))
+
+---
+
+## ═══════════════════════════════════════════════════
+## WIRING — Add one line to ai.worker.ts
+## ═══════════════════════════════════════════════════
+
+In backend/src/workers/ai.worker.ts, find the very end of
+processJob() — after:
+  await db.update(scans).set({ status: 'completed', completedAt: new Date() })
+
+ADD this line immediately after:
+  import { onScanCompleted } from '../github-app/webhook-handler'
+  ...
+  setImmediate(() => onScanCompleted(scanId).catch(err =>
+    console.error('[github-app] onScanCompleted error:', err)
+  ))
+
+setImmediate ensures this does not block the worker's job
+completion. If onScanCompleted throws, it is logged but does
+NOT fail the scan job — the scan result is already in the DB.
+
+If there is no AI worker (scan completes in analysis.worker.ts
+when score < 40), ADD the same line to analysis.worker.ts too,
+at the point where scan.status is set to 'completed'.
+
+---
+
+## ═══════════════════════════════════════════════════
+## FILE — backend/src/routes/github-app.routes.ts
+## ═══════════════════════════════════════════════════
+
+Mount at: app.use('/api/github-app', githubAppRoutes)
+AND:      app.use('/webhooks/github-app', githubAppRoutes)
+
+### POST /webhooks/github-app
+
+The GitHub webhook receiver.
+CRITICAL: Must use express.raw() middleware to preserve the raw
+body for HMAC signature verification.
+
+USE express.raw({ type: '*/*' }) on this route ONLY.
+The raw body is needed to verify the webhook signature.
+
+HANDLER:
+
+1. Read headers:
+   const signature = req.headers['x-hub-signature-256'] as string
+   const eventType = req.headers['x-github-event'] as string
+   const deliveryId = req.headers['x-github-delivery'] as string
+
+2. Verify signature using raw body:
+   const rawBody = req.body as Buffer
+   const valid = githubAppAuth.verifyWebhookSignature(rawBody, signature)
+   If !valid: return 401 { error: 'Invalid signature' }
+
+3. Idempotency check using deliveryId:
+   const existing = await db.select().from(githubAppEvents)
+     .where(eq(githubAppEvents.deliveryId, deliveryId))
+   if (existing.length > 0):
+     return 200 { message: 'Already processed' }
+
+4. Parse payload:
+   const payload = JSON.parse(rawBody.toString())
+
+5. Insert event record immediately (status: 'received'):
+   await db.insert(githubAppEvents).values({
+     deliveryId,
+     eventType,
+     action: payload.action,
+     installationId: payload.installation?.id,
+     repoFullName: payload.repository?.full_name,
+     senderLogin: payload.sender?.login,
+   })
+
+6. Return 202 IMMEDIATELY before processing:
+   res.status(202).json({ message: 'Webhook received' })
+
+7. Process event asynchronously (setImmediate):
+   setImmediate(async () => {
+     try {
+       if (eventType === 'push') {
+         await processPushEvent(payload, deliveryId)
+       } else if (eventType === 'pull_request') {
+         if (['opened','synchronize','reopened']
+           .includes(payload.action)) {
+           await processPREvent(payload, deliveryId)
+         }
+       } else if (eventType === 'installation' ||
+                  eventType === 'installation_repositories') {
+         await processInstallationEvent(payload)
+       } else if (eventType === 'ping') {
+         await db.update(githubAppEvents)
+           .set({ status: 'completed', processedAt: new Date() })
+           .where(eq(githubAppEvents.deliveryId, deliveryId))
+       }
+     } catch (err) {
+       console.error('[webhook] Processing error:', err)
+       await db.update(githubAppEvents)
+         .set({ status: 'failed', errorMessage: err.message,
+           processedAt: new Date() })
+         .where(eq(githubAppEvents.deliveryId, deliveryId))
+     }
+   })
+
+### GET /api/github-app/setup
+
+Returns the GitHub App installation URL.
+No auth required (public page for setup instructions).
+
+Response:
+{
+  installUrl: githubAppAuth.getAppInstallUrl(),
+  appSlug: process.env.GITHUB_APP_SLUG,
+  configured: githubAppAuth.isConfigured()
+}
+
+### GET /api/github-app/installation
+
+Requires requireAuth.
+Returns current user's GitHub App installation status.
+
+1. Find installation linked to req.currentUser's GitHub account:
+   const installations = await db.select()
+     .from(githubAppInstallations)
+     .where(eq(githubAppInstallations.userId, req.session.userId))
+
+2. For each installation, get its repos:
+   const repos = await db.select()
+     .from(githubAppRepos)
+     .where(eq(githubAppRepos.installationId, installation.installationId))
+
+Response:
+{
+  installed: installations.length > 0,
+  installations: [{
+    id: installation.installationId,
+    account: installation.accountLogin,
+    repoCount: repos.length,
+    repos: repos
+  }]
+}
+
+### PATCH /api/github-app/repos/:installationId/:githubRepoId
+
+Requires requireAuth.
+Update per-repo settings.
+
+Request body:
+{
+  autoScanEnabled: boolean (optional)
+  autoPrEnabled: boolean (optional)
+  blockOnGrade: 'D' | 'F' | null (optional)
+}
+
+Verify caller owns this installation before updating.
+Update github_app_repos row.
+
+### GET /a
+<truncated 6790 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.

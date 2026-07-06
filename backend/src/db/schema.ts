@@ -265,3 +265,6 @@ export const users = pgTable("users", {
 export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
 
+export * from "./github-app-schema";
+
+

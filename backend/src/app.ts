@@ -68,6 +68,7 @@ export function createApp(): Application {
 
   // ── Webhook route MUST use raw body BEFORE json middleware ─────────────────
   app.use("/webhooks/github", webhookRoutes);
+  app.use("/webhooks/github-app", express.raw({ type: "*/*" }), githubAppRouter);
 
   // ── Body parsing (after webhook route) ────────────────────────────────────
   app.use(express.json({ limit: "10mb" }));
