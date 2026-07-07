@@ -18,7 +18,7 @@ export function Sidebar() {
     { name: 'Home', href: '/', icon: LayoutDashboard },
     { name: 'Analyze', href: '/analyze', icon: Search, badge: 'Free' },
     { name: 'Repositories', href: '/repos', icon: GitBranch },
-    { name: 'Queue', href: '/queue', icon: Activity, badge: activeJobsCount > 0 ? activeJobsCount : null },
+    { name: 'Queue', href: '/system', icon: Activity, badge: activeJobsCount > 0 ? activeJobsCount : null },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
 

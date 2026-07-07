@@ -23,7 +23,35 @@ class GitHubAppAuth {
     }
 
     try {
-      const decodedKey = Buffer.from(privateKey, 'base64').toString('utf8');
+      let decodedKey = privateKey.trim();
+
+      // Format 1: Raw PEM with -----BEGIN ... headers already present
+      if (decodedKey.includes('-----BEGIN')) {
+        console.log('[GitHubAppAuth] Private key detected as raw PEM format.');
+      }
+      // Format 2: Try base64-decoding to see if it yields a PEM
+      else {
+        const attemptDecode = Buffer.from(decodedKey, 'base64').toString('utf8');
+        if (attemptDecode.includes('-----BEGIN')) {
+          decodedKey = attemptDecode;
+          console.log('[GitHubAppAuth] Private key detected as base64-encoded PEM.');
+        } else {
+          // Format 3: Raw key body without BEGIN/END headers — reconstruct PEM
+          // Strip any whitespace/newlines from the body, then wrap at 64 chars
+          const cleanBody = decodedKey.replace(/\s+/g, '');
+          const lines: string[] = [];
+          for (let i = 0; i < cleanBody.length; i += 64) {
+            lines.push(cleanBody.substring(i, i + 64));
+          }
+          decodedKey =
+            '-----BEGIN RSA PRIVATE KEY-----\n' +
+            lines.join('\n') +
+            '\n-----END RSA PRIVATE KEY-----\n';
+          console.log('[GitHubAppAuth] Private key detected as raw body — reconstructed PEM wrapper.');
+        }
+      }
+
+      console.log(`[GitHubAppAuth] Key starts with: "${decodedKey.substring(0, 40)}..."`);
       
       // Lazy-load @octokit/app (ESM-only) via dynamic import()
       this.appPromise = import('@octokit/app').then(({ App }) => {
@@ -150,3 +178,5 @@ class GitHubAppAuth {
 
 export const githubAppAuth = new GitHubAppAuth();
 export default githubAppAuth;
+// Dummy reload comment
+
