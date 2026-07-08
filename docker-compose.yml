@@ -1,18 +1,21 @@
 ##############################################################################
-# docker-compose.yml — Full local development stack
+# docker-compose.yml — Complete local development stack (all-in-one)
 #
-# Services: API, PostgreSQL, Redis, Bull Board (embedded in API)
+# Services: PostgreSQL, Redis, Backend API, Dashboard, Workers (scan, analysis, ai)
 #
 # Usage:
-#   docker compose up          — start all services
-#   docker compose up -d       — start in background
-#   docker compose down -v     — stop and remove volumes
+#   docker compose up -d          — start all services in background
+#   docker compose down            — stop all services
+#   docker compose down -v         — stop and remove volumes (wipes data)
+#   docker compose logs -f         — follow logs from all services
+#   docker compose logs -f api     — follow logs from a specific service
 ##############################################################################
 
 services:
   # ── PostgreSQL ───────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
+    container_name: ciintel-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ciintel
@@ -34,6 +37,7 @@ services:
   # ── Redis ────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
+    container_name: ciintel-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -49,15 +53,18 @@ services:
     networks:
       - ciintel
 
-  # ── API Server ───────────────────────────────────────────────────────────
+  # ── Backend API Server ──────────────────────────────────────────────────
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile.worker
+    container_name: ciintel-api
     restart: unless-stopped
     command: ["node", "dist/server.js"]
     ports:
       - "3000:3000"
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -77,6 +84,130 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    networks:
+      - ciintel
+
+  # ── Dashboard (Next.js) ────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3000
+    container_name: ciintel-dashboard
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - ciintel
+
+  # ── Scan Worker ────────────────────────────────────────────────────────
+  scan-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ciintel-scan-worker
+    restart: unless-stopped
+    command: ["node", "dist/workers/worker-manager.js"]
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      WORKER_TYPE: scan
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    networks:
+      - ciintel
+
+  # ── Analysis Worker ────────────────────────────────────────────────────
+  analysis-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ciintel-analysis-worker
+    restart: unless-stopped
+    command: ["node", "dist/workers/worker-manager.js"]
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      WORKER_TYPE: analysis
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    networks:
+      - ciintel
+
+  # ── AI Worker ──────────────────────────────────────────────────────────
+  ai-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ciintel-ai-worker
+    restart: unless-stopped
+    command: ["node", "dist/workers/worker-manager.js"]
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      WORKER_TYPE: ai
+      DATABASE_URL: postgresql://ciintel:ciintel_dev_password@postgres:5432/ciintel
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_CONCURRENCY: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1G
+        reservations:
+          cpus: "0.1"
+          memory: 256M
     networks:
       - ciintel
 

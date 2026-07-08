@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.gitignore
+*.md
+.env
+.env.example
+scratch
+scratch.ts
+scratch_prompt.txt
+temp-*.js
+test-*.ts
+vitest.config.ts
+drizzle
