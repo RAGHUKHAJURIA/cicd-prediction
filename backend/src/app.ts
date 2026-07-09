@@ -157,8 +157,8 @@ export function createApp(): Application {
   app.use("/api/github-app", githubAppRouter);
   app.use("/api/integrations", integrationsRouter);
   app.use("/api/analyze", analyzeRoutes);
-  app.use("/api/github", githubReposRoutes);
   app.use("/api/github/actions", githubActionsRoutes);
+  app.use("/api/github", githubReposRoutes);
 
   // ── 404 fallthrough ───────────────────────────────────────────────────────
   app.use("*", (req: Request, res: Response) => {

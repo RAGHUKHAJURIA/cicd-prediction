@@ -19,6 +19,10 @@ githubAuthRouter.get(
       const state = crypto.randomBytes(16).toString("hex");
       req.session.githubAuthState = state;
       
+      if (req.query.redirect) {
+        req.session.githubAuthRedirect = req.query.redirect as string;
+      }
+      
       req.session.save((err) => {
         if (err) {
           return next(new AppError(500, "Failed to save state in session", "SESSION_ERROR"));
@@ -31,9 +35,11 @@ githubAuthRouter.get(
           return res.redirect(`${DASHBOARD_URL}/login?error=missing_config`);
         }
         
+        const requestedScope = req.query.scope === "repo" ? "repo read:user user:email" : "read:user user:email";
+        
         const params = new URLSearchParams({
           client_id,
-          scope: "read:user user:email",
+          scope: requestedScope,
           state,
         });
         
@@ -290,7 +296,9 @@ githubAuthRouter.get(
             return res.redirect(`${DASHBOARD_URL}/login?error=session_error`);
           }
           
-          res.redirect(`${DASHBOARD_URL}/login?success=github`);
+          const redirectUrl = req.session.githubAuthRedirect || `${DASHBOARD_URL}/login?success=github`;
+          delete req.session.githubAuthRedirect;
+          res.redirect(redirectUrl);
         });
       });
     } catch (error: any) {

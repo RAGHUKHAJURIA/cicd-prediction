@@ -31,6 +31,14 @@ const repoAndScanParams = z.object({
   scanId: z.string().uuid('Scan ID must be a valid UUID')
 })
 
+const repoAndScanOrLatestParams = z.object({
+  id: z.string().uuid('Repository ID must be a valid UUID'),
+  scanId: z.string().refine(
+    (val) => val === 'latest' || /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val),
+    { message: 'Scan ID must be a valid UUID or "latest"' }
+  )
+})
+
 const repoIdParam = z.object({
   id: z.string().uuid('Repository ID must be a valid UUID')
 })
@@ -299,17 +307,39 @@ const triggerScan: RequestHandler = async (
     }
 
     // STEP 4 — Check for already running scan
-    const running = await db
+    const runningScans = await db
       .select()
       .from(scans)
       .where(and(eq(scans.repoId, repo.id), eq(scans.status, 'running')))
 
-    if (running.length > 0) {
+    const STALE_THRESHOLD_MS = 15 * 60 * 1000 // 15 minutes
+    const now = new Date()
+    const activeRunning = []
+
+    for (const scan of runningScans) {
+      const duration = now.getTime() - scan.triggeredAt.getTime()
+      if (duration > STALE_THRESHOLD_MS) {
+        // Mark stale scan as failed
+        await db
+          .update(scans)
+          .set({
+            status: 'failed',
+            completedAt: now,
+            updatedAt: now,
+            errorMessage: 'Scan timed out or worker process crashed.'
+          })
+          .where(eq(scans.id, scan.id))
+      } else {
+        activeRunning.push(scan)
+      }
+    }
+
+    if (activeRunning.length > 0) {
       res.status(409).json({
         success: false,
         error: 'A scan is already running for this repository',
         code: 'SCAN_IN_PROGRESS',
-        details: { runningScanId: running[0].id }
+        details: { runningScanId: activeRunning[0].id }
       })
       return
     }
@@ -856,7 +886,24 @@ const applyFixesHandler: RequestHandler = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id: repoId, scanId } = req.params as z.infer<typeof repoAndScanParams>
+    const { id: repoId, scanId: rawScanId } = req.params
+    let scanId = rawScanId
+
+    if (scanId === 'latest') {
+      const [latestScan] = await db
+        .select()
+        .from(scans)
+        .where(and(eq(scans.repoId, repoId), eq(scans.status, 'completed')))
+        .orderBy(desc(scans.triggeredAt))
+        .limit(1)
+
+      if (!latestScan) {
+        res.status(404).json({ success: false, error: 'No completed scan found for this repository' })
+        return
+      }
+      scanId = latestScan.id
+    }
+
     const body = parseRequestBody(applyFixesSchema, req.body)
 
     // STEP 1 — Load scan and verify it belongs to this repo:
@@ -1392,7 +1439,7 @@ router.post(
   '/:id/scans/:scanId/apply-fixes',
   requireAuth,
   requireRepoOwner,
-  validateParams(repoAndScanParams),
+  validateParams(repoAndScanOrLatestParams),
   applyFixesHandler
 )
 

@@ -607,13 +607,21 @@ export function ApplyFixesModal({
               </div>
 
               {/* Specific CTA boxes based on errorCode */}
-              {errorCode === 'NO_GITHUB_TOKEN' && (
+              {(errorCode === 'NO_GITHUB_TOKEN' || 
+                errorCode === 'COMMIT_FAILED' || 
+                (error && (
+                  error.toLowerCase().includes('token') || 
+                  error.toLowerCase().includes('permission') || 
+                  error.toLowerCase().includes('authorized') || 
+                  error.toLowerCase().includes('access')
+                ))
+              ) && (
                 <div className="p-4 bg-canvas-inset border border-border rounded-lg max-w-[340px] mx-auto space-y-3">
                   <p className="text-xs text-fg-muted leading-relaxed">
                     You need to authorize the platform to write commits and open pull requests on your behalf.
                   </p>
                   <a
-                    href="/settings/integrations"
+                    href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/auth/github?scope=repo&redirect=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
                     className="inline-flex items-center justify-center h-8 px-4 rounded bg-accent hover:bg-accent-hover text-xs font-semibold text-white"
                   >
                     Connect GitHub →

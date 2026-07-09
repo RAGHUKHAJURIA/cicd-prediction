@@ -7,29 +7,30 @@ interface ScoreGaugeProps {
 }
 
 export function ScoreGauge({ score, grade }: ScoreGaugeProps) {
+  const validScore = typeof score === 'number' && !isNaN(score) ? score : 0;
   const [animatedScore, setAnimatedScore] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setAnimatedScore(score);
+      setAnimatedScore(validScore);
     }, 100);
     return () => clearTimeout(timer);
-  }, [score]);
+  }, [validScore]);
 
   // Map score to 0-180 degrees for semi-circle
   const rotation = (animatedScore / 100) * 180;
 
   let colorClass = 'text-success glow-success';
-  if (score >= 25 && score < 50) colorClass = 'text-blue-400 glow-accent';
-  else if (score >= 50 && score < 75) colorClass = 'text-warning glow-warning';
-  else if (score >= 75 && score < 90) colorClass = 'text-severe glow-warning'; // no orange glow, fallback to warning
-  else if (score >= 90) colorClass = 'text-danger glow-danger';
+  if (validScore >= 25 && validScore < 50) colorClass = 'text-blue-400 glow-accent';
+  else if (validScore >= 50 && validScore < 75) colorClass = 'text-warning glow-warning';
+  else if (validScore >= 75 && validScore < 90) colorClass = 'text-severe glow-warning'; // no orange glow, fallback to warning
+  else if (validScore >= 90) colorClass = 'text-danger glow-danger';
 
   let fillClass = 'stroke-success';
-  if (score >= 25 && score < 50) fillClass = 'stroke-blue-400';
-  else if (score >= 50 && score < 75) fillClass = 'stroke-warning';
-  else if (score >= 75 && score < 90) fillClass = 'stroke-severe';
-  else if (score >= 90) fillClass = 'stroke-danger';
+  if (validScore >= 25 && validScore < 50) fillClass = 'stroke-blue-400';
+  else if (validScore >= 50 && validScore < 75) fillClass = 'stroke-warning';
+  else if (validScore >= 75 && validScore < 90) fillClass = 'stroke-severe';
+  else if (validScore >= 90) fillClass = 'stroke-danger';
 
   return (
     <div className="relative w-48 h-24 flex flex-col items-center justify-end overflow-hidden">
@@ -56,8 +57,8 @@ export function ScoreGauge({ score, grade }: ScoreGaugeProps) {
       </svg>
       
       <div className="z-10 flex flex-col items-center mb-1">
-        <span className={clsx("text-4xl font-bold leading-none", colorClass)}>{score}</span>
-        <span className="text-xs text-fg-muted font-mono mt-1">Grade {grade}</span>
+        <span className={clsx("text-4xl font-bold leading-none", colorClass)}>{validScore}</span>
+        <span className="text-xs text-fg-muted font-mono mt-1">Grade {grade || 'N/A'}</span>
       </div>
     </div>
   );

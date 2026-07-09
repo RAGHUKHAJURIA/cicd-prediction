@@ -135,13 +135,31 @@ class APIClient {
   }
 
   async getLatestScan(repoId: string): Promise<ScanDetail> {
-    const result = await this.request<{ data: ScanDetail }>('GET', `/api/repos/${repoId}/scans/latest`);
-    return result.data;
+    const result = await this.request<any>('GET', `/api/repos/${repoId}/scans/latest`);
+    const d = result.data;
+    if (!d) return null as any;
+    return {
+      ...d.scan,
+      riskScore: d.score?.value ?? 0,
+      riskGrade: d.score?.grade ?? 'F',
+      findings: d.findings,
+      artifacts: d.artifacts,
+      analysisReport: d.aiReport,
+    };
   }
 
   async getScan(repoId: string, scanId: string): Promise<ScanDetail> {
-    const result = await this.request<{ data: ScanDetail }>('GET', `/api/repos/${repoId}/scans/${scanId}`);
-    return result.data;
+    const result = await this.request<any>('GET', `/api/repos/${repoId}/scans/${scanId}`);
+    const d = result.data;
+    if (!d) return null as any;
+    return {
+      ...d.scan,
+      riskScore: d.score?.value ?? 0,
+      riskGrade: d.score?.grade ?? 'F',
+      findings: d.findings,
+      artifacts: d.artifacts,
+      analysisReport: d.aiReport,
+    };
   }
 
   // ── AI ──────────────────────────────────────────────────────────────────

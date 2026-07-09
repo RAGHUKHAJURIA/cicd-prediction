@@ -29,7 +29,7 @@ export default function ScanDetailPage() {
   const [applyResult, setApplyResult] = useState<ApplyFixesResult | null>(null);
 
   // We assume the AI job id is stored somehow, or we query for it. For now, we'll let AIReportPanel trigger it.
-  const { job: aiJob } = useAIJob(scanId, scan?.analysisReport?.id, 'report');
+  const { job: aiJob } = useAIJob(scan?.id || scanId, scan?.analysisReport?.id, 'report');
 
   if (isLoading || !scan) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>;
@@ -118,7 +118,7 @@ export default function ScanDetailPage() {
 
         <div className="flex items-center gap-4">
           <ApplyFixesButton
-            scanId={scanId}
+            scanId={scan.id}
             repoId={repoId}
             repoName={repo?.repoName ?? ''}
             branch={scan.branch}
@@ -130,7 +130,7 @@ export default function ScanDetailPage() {
             onOpenModal={() => setShowApplyModal(true)}
           />
           <Link 
-            href={`/repos/${repoId}/scans/${scanId}/dag`}
+            href={`/repos/${repoId}/scans/${scan.id}/dag`}
             className="px-4 py-2 bg-canvas-subtle hover:bg-border-muted border border-border rounded-md text-sm font-medium text-fg transition-colors"
           >
             View DAG
@@ -143,7 +143,7 @@ export default function ScanDetailPage() {
 
       {showApplyModal && (
         <ApplyFixesModal
-          scanId={scanId}
+          scanId={scan.id}
           repoId={repoId}
           repoName={repo?.repoName ?? ''}
           branch={scan.branch}
@@ -250,7 +250,7 @@ export default function ScanDetailPage() {
 
         <Tabs.Content value="findings" className="focus:outline-none animate-fade-in">
           <ScanResultsShell
-            scanId={scanId}
+            scanId={scan.id}
             repoId={repoId}
             repoOwner={repo?.owner ?? ''}
             repoName={repo?.repoName ?? ''}

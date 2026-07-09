@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, ilike, or, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "../db/client";
-import { repos, users } from "../db/schema";
+import { repos, users, findings, parsedArtifacts, scans, aiExplanations, aiRemediations, aiPredictions, analysisReports } from "../db/schema";
 import { validate, validateParams, validateQuery } from "../middleware/validate";
 import { NotFoundError, AppError } from "../middleware/error-handler";
 import { successResponse } from "../utils/response";
@@ -273,7 +273,7 @@ const listRepos: RequestHandler = async (
           s.error_message as "errorMessage", s.repo_id as "repoId"
         FROM scans s
         LEFT JOIN analysis_reports ar ON s.id = ar.scan_id
-        WHERE s.repo_id IN (${sql.join(repoIds)})
+        WHERE s.repo_id IN (${sql.join(repoIds.map(id => sql`${id}`), sql`, `)})
         ORDER BY s.repo_id, s.triggered_at DESC
       `);
       latestScans = scansResult.rows;
@@ -368,13 +368,17 @@ const deleteRepo: RequestHandler = async (
 
     if (!existing) return next(NotFoundError("Repository"));
 
-    // Delete cascade order: findings → parsed_artifacts → scans → repo
-    await db.execute(sql`
-      DELETE FROM findings WHERE repo_id = ${id};
-      DELETE FROM parsed_artifacts WHERE repo_id = ${id};
-      DELETE FROM scans WHERE repo_id = ${id};
-      DELETE FROM repos WHERE id = ${id};
-    `);
+    // Delete cascade order: AI tables → findings → parsed_artifacts → scans → repo
+    await db.transaction(async (tx) => {
+      await tx.delete(aiExplanations).where(eq(aiExplanations.repoId, id));
+      await tx.delete(aiRemediations).where(eq(aiRemediations.repoId, id));
+      await tx.delete(aiPredictions).where(eq(aiPredictions.repoId, id));
+      await tx.delete(analysisReports).where(eq(analysisReports.repoId, id));
+      await tx.delete(findings).where(eq(findings.repoId, id));
+      await tx.delete(parsedArtifacts).where(eq(parsedArtifacts.repoId, id));
+      await tx.delete(scans).where(eq(scans.repoId, id));
+      await tx.delete(repos).where(eq(repos.id, id));
+    });
 
     successResponse(res, null, 200, "Repository and all associated scans deleted");
   } catch (err) {

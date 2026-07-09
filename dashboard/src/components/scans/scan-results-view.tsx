@@ -36,6 +36,10 @@ export function ScanResultsView({
   repoId,
   onRescan
 }: ScanResultsViewProps) {
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+  const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const githubRepoAuthUrl = `${apiBaseUrl}/auth/github?scope=repo&redirect=${encodeURIComponent(currentUrl)}`;
+
   const [animatedScore, setAnimatedScore] = useState(0);
   const [copiedPatchId, setCopiedPatchId] = useState<string | null>(null);
   const [copiedSuggestedId, setCopiedSuggestedId] = useState<string | null>(null);
@@ -717,11 +721,25 @@ export function ScanResultsView({
                                       )}
                                     </div>
 
-                                    {isActionError && (
-                                          <p className="text-xs text-danger font-medium mt-1">
-                                        Error: {isActionError}
-                                      </p>
-                                    )}
+                                     {isActionError && (
+                                       <div className="space-y-1 mt-2">
+                                         <p className="text-xs text-danger font-medium">
+                                           Error: {isActionError}
+                                         </p>
+                                         {(isActionError.toLowerCase().includes('permission') ||
+                                           isActionError.toLowerCase().includes('access') ||
+                                           isActionError.toLowerCase().includes('token') ||
+                                           isActionError.toLowerCase().includes('not found') ||
+                                           isActionError.toLowerCase().includes('unauthorized')) && (
+                                           <a
+                                             href={githubRepoAuthUrl}
+                                             className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline font-semibold"
+                                           >
+                                             Grant GitHub Repository Write Access →
+                                           </a>
+                                         )}
+                                       </div>
+                                     )}
                                   </div>
                                 )}
                               </div>
