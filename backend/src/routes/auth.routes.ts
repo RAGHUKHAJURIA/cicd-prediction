@@ -3,20 +3,14 @@ import { z } from "zod";
 import { authService } from "../services/auth.service";
 import { userService } from "../services/user.service";
 import { requireAuth } from "../middleware/auth.middleware";
-import { createRateLimiter } from "../middleware/rate-limiter";
+import { createRateLimiter, loginRateLimiter, registerRateLimiter } from "../middleware/rate-limiter";
+import { RATE_LIMITS } from "../middleware/rate-limit-configs";
 import { validate } from "../middleware/validate";
 import { AppError } from "../middleware/error-handler";
 import { sendWelcomeEmail } from "../lib/mailer";
 
 export const authRoutes = Router();
 
-// Rate limiter for login: 5 attempts per IP per 15 minutes (100 in development to prevent lockouts)
-const loginRateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: process.env["NODE_ENV"] === "development" ? 100 : 5,
-  keyPrefix: "login",
-  message: "Too many attempts. Try again in 15 minutes.",
-});
 
 // Zod schemas
 const registerSchema = z.object({
@@ -51,6 +45,7 @@ const deleteAccountSchema = z.object({
 // POST /auth/register
 authRoutes.post(
   "/register",
+  registerRateLimiter,
   validate(registerSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -192,6 +187,7 @@ authRoutes.patch(
 // POST /auth/change-password
 authRoutes.post(
   "/change-password",
+  createRateLimiter(RATE_LIMITS.authPasswordChange),
   requireAuth,
   validate(changePasswordSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {

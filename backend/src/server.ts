@@ -4,6 +4,8 @@ import { sql } from "drizzle-orm";
 import { createApp } from "./app";
 import { db, pool } from "./db/client";
 import { WorkerManager } from "./workers/worker-manager";
+import { initSlidingWindow } from "./middleware/sliding-window";
+import { warmCache } from "./cache/cache-warmer";
 
 const PORT = parseInt(process.env["PORT"] ?? "3000", 10);
 
@@ -15,6 +17,21 @@ async function bootstrap(): Promise<void> {
   } catch (err) {
     console.error("[server] Fatal: Cannot connect to database.", err);
     process.exit(1);
+  }
+
+  // 1.5. Initialize sliding window and pre-warm cache (non-fatal if Redis down)
+  try {
+    await initSlidingWindow();
+    console.log("[server] Sliding window rate limiter initialized.");
+  } catch (err) {
+    console.error("[server] Warning: Failed to initialize sliding window rate limiter:", err);
+  }
+
+  try {
+    await warmCache();
+    console.log("[server] Caches pre-warmed successfully.");
+  } catch (err) {
+    console.error("[server] Warning: Failed to pre-warm caches:", err);
   }
 
   // Warn (non-fatal) if email credentials are missing

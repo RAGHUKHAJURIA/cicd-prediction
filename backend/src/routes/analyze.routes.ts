@@ -6,6 +6,7 @@ import { scans, users } from "../db/schema";
 import { validate, validateParams } from "../middleware/validate";
 import { AppError } from "../middleware/error-handler";
 import { createRateLimiter } from "../middleware/rate-limiter";
+import { RATE_LIMITS } from "../middleware/rate-limit-configs";
 import { publicAnalyzer } from "../services/public-analyzer";
 import { decryptTokenIfPresent } from "../lib/tokenCrypto";
 import { successResponse } from "../utils/response";
@@ -14,20 +15,8 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
-const authedRateLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000,
-  max: 30,
-  keyPrefix: "scan:auth",
-  keyGenerator: (req) => req.currentUser?.id || req.ip || "unknown",
-  message: "Rate limit exceeded. Logged-in users can perform up to 30 scans per hour.",
-});
-
-const guestRateLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  keyPrefix: "scan:guest",
-  message: "Rate limit exceeded. Guests can perform up to 5 repository scans per hour.",
-});
+const authedRateLimiter = createRateLimiter(RATE_LIMITS.publicScan.authenticated);
+const guestRateLimiter = createRateLimiter(RATE_LIMITS.publicScan.guest);
 
 const dynamicRateLimiter = (req: Request, res: Response, next: NextFunction) => {
   if (req.currentUser) {

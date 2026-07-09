@@ -51,7 +51,7 @@ export function ArchitectureMap() {
               {/* Center Pill */}
               <div className="absolute left-1/2 -translate-x-1/2 px-3 py-1 rounded-md bg-white/[0.03] border border-white/[0.05] flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-success" />
-                <span className="text-xs font-medium text-gray-400 font-mono">antigravity.engine</span>
+                <span className="text-xs font-medium text-gray-400 font-mono">cicd.agent.engine</span>
               </div>
             </div>
 
@@ -77,7 +77,7 @@ export function ArchitectureMap() {
                   {/* Outer Glow */}
                   <div className="absolute inset-0 rounded-2xl shadow-[0_0_40px_rgba(57,211,83,0.15)] pointer-events-none" />
                   <Brain className="w-10 h-10 text-success mb-3" strokeWidth={1.5} />
-                  <div className="font-bold text-white text-lg font-sans tracking-tight">Antigravity</div>
+                  <div className="font-bold text-white text-lg font-sans tracking-tight">CI/CD Agent</div>
                   <div className="text-gray-400 text-xs font-medium">Orchestrator</div>
                 </div>
               </motion.div>

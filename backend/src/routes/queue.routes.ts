@@ -8,13 +8,25 @@
 import { Router, Request, Response } from 'express'
 import { scanQueue, analysisQueue, aiQueue } from '../queue/queue.definitions'
 import { checkRedisHealth } from '../queue/redis.client'
+import { createRateLimiter } from '../middleware/rate-limiter'
+import { RATE_LIMITS } from '../middleware/rate-limit-configs'
+import { cacheManager } from '../cache/cache-manager'
 
 const router = Router()
 
 // ── GET /api/queue/stats ────────────────────────────────────────────────────
 
-router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
+router.get('/stats', createRateLimiter(RATE_LIMITS.queueStats), async (_req: Request, res: Response): Promise<void> => {
   try {
+    const cached = await cacheManager.getQueueStats()
+    if (cached) {
+      res.status(200).json({
+        success: true,
+        data: cached
+      })
+      return
+    }
+
     const [scanCounts, analysisCounts, aiCounts, redisHealth] = await Promise.all([
       scanQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
       analysisQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
@@ -22,20 +34,24 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
       checkRedisHealth()
     ])
 
+    const stats = {
+      queues: {
+        scan: scanCounts,
+        analysis: analysisCounts,
+        ai: aiCounts
+      },
+      redis: {
+        healthy: redisHealth.healthy,
+        latencyMs: redisHealth.latencyMs
+      },
+      timestamp: new Date().toISOString()
+    }
+
+    await cacheManager.setQueueStats(stats)
+
     res.status(200).json({
       success: true,
-      data: {
-        queues: {
-          scan: scanCounts,
-          analysis: analysisCounts,
-          ai: aiCounts
-        },
-        redis: {
-          healthy: redisHealth.healthy,
-          latencyMs: redisHealth.latencyMs
-        },
-        timestamp: new Date().toISOString()
-      }
+      data: stats
     })
   } catch (err: any) {
     res.status(500).json({

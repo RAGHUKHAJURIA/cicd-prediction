@@ -10,6 +10,9 @@ import { successResponse } from "../utils/response";
 import { GitHubClient, GitLabClient } from "../utils/github.client";
 import { requireAuth, requireRepoOwner } from "../middleware/auth.middleware";
 import { decryptTokenIfPresent } from "../lib/tokenCrypto";
+import { createRateLimiter } from "../middleware/rate-limiter";
+import { RATE_LIMITS } from "../middleware/rate-limit-configs";
+import { cacheManager } from "../cache/cache-manager";
 
 const router = Router();
 
@@ -198,6 +201,10 @@ const registerRepo: RequestHandler = async (
       responseData["verificationWarning"] = verificationWarning;
     }
 
+    if (req.currentUser?.id) {
+      await cacheManager.onRepoCreated(req.currentUser.id);
+    }
+
     successResponse(res, responseData, 201, "Repository registered successfully");
   } catch (err) {
     next(err);
@@ -216,6 +223,19 @@ const listRepos: RequestHandler = async (
     const page = Number(q.page);
     const limit = Number(q.limit);
     const offset = (page - 1) * limit;
+
+    const userId = req.session.userId;
+    if (userId && !q.search && !q.provider && !q.status && page === 1) {
+      const cached = await cacheManager.getUserRepoList(userId);
+      if (cached) {
+        res.status(200).json({
+          success: true,
+          data: cached,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+    }
 
     // Build WHERE conditions
     const conditions = [];
@@ -287,19 +307,25 @@ const listRepos: RequestHandler = async (
       };
     });
 
+    const responseData = {
+      repos: reposWithLatestScan,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page * limit < total,
+        hasPrev: page > 1,
+      },
+    };
+
+    if (userId && !q.search && !q.provider && !q.status && page === 1) {
+      await cacheManager.setUserRepoList(userId, responseData);
+    }
+
     res.status(200).json({
       success: true,
-      data: {
-        repos: reposWithLatestScan,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page * limit < total,
-          hasPrev: page > 1,
-        },
-      },
+      data: responseData,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
@@ -380,6 +406,10 @@ const deleteRepo: RequestHandler = async (
       await tx.delete(repos).where(eq(repos.id, id));
     });
 
+    if (req.currentUser?.id) {
+      await cacheManager.onRepoDeleted(req.currentUser.id, id);
+    }
+
     successResponse(res, null, 200, "Repository and all associated scans deleted");
   } catch (err) {
     next(err);
@@ -438,6 +468,7 @@ const updateRepo: RequestHandler = async (
 router.post(
   "/",
   requireAuth,
+  createRateLimiter(RATE_LIMITS.repoCreate),
   validate(registerSchema),
   registerRepo
 );
@@ -445,6 +476,7 @@ router.post(
 router.get(
   "/",
   requireAuth,
+  createRateLimiter(RATE_LIMITS.repoList),
   validateQuery(listQuerySchema),
   listRepos
 );

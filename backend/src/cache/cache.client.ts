@@ -16,14 +16,14 @@ import { queueRedis } from '../queue/redis.client'
 // ── TTL Constants (seconds) ─────────────────────────────────────────────────
 
 export const CACHE_TTL = {
-  MANIFEST:        86400,   // 24h — parsed workflows keyed by immutable SHA
+  MANIFEST:        259200,  // 3 days — parsed workflows keyed by immutable SHA
   GITHUB_TREE:     300,     // 5 min — repo file trees change on push
   GITHUB_FILE:     3600,    // 1h — file content keyed by blob SHA (immutable)
   LATEST_SCAN:     300,     // 5 min — latest scan summary changes often
-  SCAN_RESULT:     86400,   // 24h — completed scan results are immutable
-  ANALYSIS_REPORT: 86400,   // 24h
-  AI_REPORT:       86400,   // 24h
-  JOB_STATUS:      86400    // 24h
+  SCAN_RESULT:     259200,  // 3 days — completed scan results are immutable
+  ANALYSIS_REPORT: 259200,  // 3 days
+  AI_REPORT:       259200,  // 3 days
+  JOB_STATUS:      259200   // 3 days
 } as const
 
 // ── Result Types ────────────────────────────────────────────────────────────

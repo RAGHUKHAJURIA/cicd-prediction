@@ -7,10 +7,13 @@ import { db } from '../db';
 import { scans, findings as findingsTable, parsedArtifacts } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { AIFinding } from '../engine/report-builder';
+import { createRateLimiter } from '../middleware/rate-limiter';
+import { RATE_LIMITS } from '../middleware/rate-limit-configs';
+import { cacheManager } from '../cache/cache-manager';
 
 export const aiRoutes = Router();
 
-aiRoutes.post('/scans/:scanId/explain', async (req: Request, res: Response) => {
+aiRoutes.post('/scans/:scanId/explain', createRateLimiter(RATE_LIMITS.aiExplain), async (req: Request, res: Response) => {
   try {
     const { scanId } = req.params;
     
@@ -90,7 +93,7 @@ aiRoutes.get('/scans/:scanId/explain/:jobId', (req: Request, res: Response) => {
   return res.status(500).json({ error: "Unknown job status" });
 });
 
-aiRoutes.post('/scans/:scanId/remediate', async (req: Request, res: Response) => {
+aiRoutes.post('/scans/:scanId/remediate', createRateLimiter(RATE_LIMITS.aiRemediate), async (req: Request, res: Response) => {
   try {
     const { scanId } = req.params;
     
@@ -158,7 +161,7 @@ aiRoutes.get('/scans/:scanId/remediate/:jobId', (req: Request, res: Response) =>
   return res.status(200).json({ success: false, data: { jobId, status: "failed", error: job.error } });
 });
 
-aiRoutes.post('/scans/:scanId/ai-report', async (req: Request, res: Response) => {
+aiRoutes.post('/scans/:scanId/ai-report', createRateLimiter(RATE_LIMITS.aiReport), async (req: Request, res: Response) => {
   try {
     const { scanId } = req.params;
     const scanRecord = await db.select().from(scans).where(eq(scans.id, scanId)).limit(1).then(r => r[0]);
@@ -184,13 +187,34 @@ aiRoutes.post('/scans/:scanId/ai-report', async (req: Request, res: Response) =>
   } catch (e: any) { return res.status(500).json({ success: false, error: e.message }); }
 });
 
-aiRoutes.get('/scans/:scanId/ai-report/:jobId', (req: Request, res: Response) => {
+aiRoutes.get('/scans/:scanId/ai-report/:jobId', async (req: Request, res: Response) => {
   const { scanId, jobId } = req.params;
+  
+  const cached = await cacheManager.getAIReport(scanId);
+  if (cached) {
+    return res.status(200).json({
+      success: true,
+      data: {
+        jobId,
+        status: "completed",
+        report: cached,
+        completedAt: new Date().toISOString(),
+        costUsd: 0
+      }
+    });
+  }
+
   const job = aiOrchestrator.getJob(jobId);
   if (!job || job.scanId !== scanId) return res.status(404).json({ error: "Job not found" });
   if (job.status === 'pending' || job.status === 'running') return res.status(200).json({ success: true, data: { jobId, status: job.status, progress: job.progress } });
   if (job.status === 'failed') return res.status(200).json({ success: false, data: { jobId, status: "failed", error: job.error } });
-  return res.status(200).json({ success: true, data: { jobId, status: "completed", report: job.result?.fullReport, completedAt: job.completedAt, costUsd: job.result?.fullReport?.totalCostUsd } });
+  
+  const report = job.result?.fullReport;
+  if (report) {
+    await cacheManager.setAIReport(scanId, report);
+  }
+
+  return res.status(200).json({ success: true, data: { jobId, status: "completed", report, completedAt: job.completedAt, costUsd: job.result?.fullReport?.totalCostUsd } });
 });
 
 aiRoutes.get('/scans/:scanId/ai-report/:jobId/status', (req: Request, res: Response) => {

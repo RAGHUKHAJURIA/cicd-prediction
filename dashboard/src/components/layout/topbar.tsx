@@ -104,11 +104,14 @@ export function Topbar() {
             <Search className="h-4 w-4" />
           </button>
           
-          <button className="h-8 w-8 rounded-full flex items-center justify-center text-fg-muted hover:text-fg hover:bg-white/[0.04] transition-all border border-transparent relative">
+          <Link 
+            href="/settings/notifications" 
+            className="h-8 w-8 rounded-full flex items-center justify-center text-fg-muted hover:text-fg hover:bg-white/[0.04] transition-all border border-transparent relative pointer-events-auto"
+          >
             <Bell className="h-4 w-4" />
             {/* Mock notification dot */}
             <span className="absolute top-2.5 right-2.5 h-1.5 w-1.5 bg-accent rounded-full border border-canvas-subtle" />
-          </button>
+          </Link>
 
           {isLoading ? (
             <div className="h-8 w-8 rounded-full bg-white/[0.04] animate-pulse" />

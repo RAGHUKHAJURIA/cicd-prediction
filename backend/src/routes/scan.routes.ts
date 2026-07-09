@@ -4,6 +4,9 @@ import { eq, and, desc, sql } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { db } from '../db/client'
 import { repos, scans, parsedArtifacts, findings, users, aiRemediations, aiExplanations, analysisReports, githubAppRepos } from '../db/schema'
+import { createRateLimiter } from '../middleware/rate-limiter'
+import { RATE_LIMITS } from '../middleware/rate-limit-configs'
+import { cacheManager } from '../cache/cache-manager'
 import { githubAppAuth } from '../github-app/app-auth'
 import { validateParams, validateQuery } from '../middleware/validate'
 import { AppError, BadRequestError, NotFoundError } from '../middleware/error-handler'
@@ -303,7 +306,7 @@ const triggerScan: RequestHandler = async (
 
     // STEP 3 — Cache token in Redis if we have one
     if (token) {
-      await queueRedis.setex(`temp-token:${repo.id}`, 86400, token)
+      await queueRedis.setex(`temp-token:${repo.id}`, 259200, token)
     }
 
     // STEP 4 — Check for already running scan
@@ -561,6 +564,14 @@ const getScan: RequestHandler = async (
       return
     }
 
+    if (scan.status === 'completed') {
+      const cached = await cacheManager.getScanDetail(scanId)
+      if (cached) {
+        res.status(200).json({ success: true, data: cached })
+        return
+      }
+    }
+
     // 3. Fetch findings ordered by severity desc
     const allFindings = await db
       .select()
@@ -634,7 +645,7 @@ const getScan: RequestHandler = async (
     })
 
     // 10. Return 200
-    res.status(200).json({
+    const resultData = {
       success: true,
       data: {
         scan: {
@@ -675,7 +686,13 @@ const getScan: RequestHandler = async (
         })),
         aiReport: report ? JSON.parse(report.reportJson ?? '{}') : null,
       }
-    })
+    }
+
+    if (scan.status === 'completed') {
+      await cacheManager.setScanDetail(scanId, resultData.data)
+    }
+
+    res.status(200).json(resultData)
   } catch (err) {
     next(err)
   }
@@ -757,6 +774,8 @@ router.post(
   '/:id/scan',
   requireAuth,
   requireRepoOwner,
+  createRateLimiter(RATE_LIMITS.scanTrigger),
+  createRateLimiter(RATE_LIMITS.scanTriggerStrict),
   validateParams(repoIdParam),
   triggerScan
 )

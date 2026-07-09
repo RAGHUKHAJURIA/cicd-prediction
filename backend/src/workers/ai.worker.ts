@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import type { AIContext, AIFinding } from '../engine/report-builder'
 import { onScanCompleted } from '../github-app/webhook-handler'
+import { cacheManager } from '../cache/cache-manager'
 import { WorkerName, WorkerStatus, WORKER_CONCURRENCY, LOG_EVENTS, AIPipelineResult, WorkerHealth } from './worker.types'
 
 export class AIWorker {
@@ -250,6 +251,8 @@ export class AIWorker {
         updatedAt:           new Date()
       })
       .where(eq(scans.id, scanId))
+
+    await cacheManager.onScanCompleted(repoId, scanId)
 
     setImmediate(() => onScanCompleted(scanId).catch(err =>
       console.error('[github-app] onScanCompleted error:', err)

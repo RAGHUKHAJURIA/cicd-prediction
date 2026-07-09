@@ -23,6 +23,8 @@ import { authRoutes } from "./routes/auth.routes";
 import { githubAuthRouter } from "./routes/githubAuth";
 import { githubReposRoutes } from "./routes/github-repos.routes";
 import { githubActionsRoutes } from "./routes/github-actions.routes";
+import { adminRoutes } from "./routes/admin.routes";
+import { cacheManager } from "./cache/cache-manager";
 
 const ENDPOINTS = [
   "POST   /api/repos                          — Register a repository",
@@ -122,8 +124,18 @@ export function createApp(): Application {
   app.get("/api/health", async (_req: Request, res: Response) => {
     try {
       const health = await healthService.getSystemHealth();
-      const statusCode = health.status === "healthy" ? 200 : health.status === "degraded" ? 200 : 503;
-      res.status(statusCode).json({ success: true, data: health });
+      const cacheInfo = await cacheManager.getCacheInfo();
+      
+      const healthWithCache = {
+        ...health,
+        checks: {
+          ...health.checks,
+          cache: cacheInfo
+        }
+      };
+
+      const statusCode = healthWithCache.status === "healthy" ? 200 : healthWithCache.status === "degraded" ? 200 : 503;
+      res.status(statusCode).json({ success: true, data: healthWithCache });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -159,6 +171,7 @@ export function createApp(): Application {
   app.use("/api/analyze", analyzeRoutes);
   app.use("/api/github/actions", githubActionsRoutes);
   app.use("/api/github", githubReposRoutes);
+  app.use("/api/admin", adminRoutes);
 
   // ── 404 fallthrough ───────────────────────────────────────────────────────
   app.use("*", (req: Request, res: Response) => {

@@ -257,7 +257,7 @@ export class ScanWorker {
           const content = await github.getFileContent(
             owner, repoName, file.path, branch, file.sha
           )
-          await queueRedis.setex(`file-content:${scanId}:${file.path}`, 86400, content)
+          await queueRedis.setex(`file-content:${scanId}:${file.path}`, 259200, content)
           fetchedCount++
           const pct = 30 + Math.floor((fetchedCount / ciFiles.length) * 30)
           await this.updateProgress(job, pct)
@@ -466,7 +466,7 @@ export class ScanWorker {
       const token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN;
       const github = new GitHubClient(token || undefined);
       const content = await github.getFileContent(owner, repoName, filePath, branch, gitSha)
-      await queueRedis.setex(`file-content:${scanId}:${filePath}`, 86400, content)
+      await queueRedis.setex(`file-content:${scanId}:${filePath}`, 259200, content)
       
       try {
         const parserName = detectFileType(filePath, content)

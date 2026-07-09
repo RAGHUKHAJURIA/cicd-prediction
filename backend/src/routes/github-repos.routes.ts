@@ -12,6 +12,9 @@ import { githubUserService } from "../services/github-user.service";
 import { enqueueScan } from "../queue/producers";
 import { JobPriority } from "../queue/job.types";
 import { logger } from "../utils/logger";
+import { createRateLimiter } from "../middleware/rate-limiter";
+import { RATE_LIMITS } from "../middleware/rate-limit-configs";
+import { cacheManager } from "../cache/cache-manager";
 
 const router = Router();
 
@@ -48,13 +51,33 @@ const listGitHubRepos: RequestHandler = async (
     }
 
     const q = req.query as unknown as z.infer<typeof listReposQuerySchema>;
+    const userId = req.currentUser.id;
+    const page = Number(q.page);
+    const perPage = Number(q.perPage);
+    const sort = q.sort;
+    const type = q.type;
+    const search = q.search;
+
+    const isDefaultQuery = !search && perPage === 30 && sort === 'updated' && type === 'all';
+    if (isDefaultQuery) {
+      const cached = await cacheManager.getGithubUserRepos(userId, page);
+      if (cached) {
+        successResponse(res, cached);
+        return;
+      }
+    }
+
     const result = await githubUserService.listUserRepos(req.currentUser.id, {
-      page: Number(q.page),
-      perPage: Number(q.perPage),
-      sort: q.sort,
-      type: q.type,
-      ...(q.search ? { search: q.search } : {}),
+      page,
+      perPage,
+      sort,
+      type,
+      ...(search ? { search } : {}),
     });
+
+    if (isDefaultQuery) {
+      await cacheManager.setGithubUserRepos(userId, page, result);
+    }
 
     successResponse(res, result);
   } catch (err) {
@@ -241,6 +264,7 @@ const importRepo: RequestHandler = async (
 router.get(
   "/repos",
   requireAuth,
+  createRateLimiter(RATE_LIMITS.githubRepoList),
   validateQuery(listReposQuerySchema),
   listGitHubRepos
 );

@@ -4,6 +4,8 @@ import { githubAppInstallations, githubAppRepos, githubAppEvents } from '../db/s
 import { eq, and, isNull } from 'drizzle-orm';
 import { requireAuth } from '../middleware/auth.middleware';
 import { githubAppAuth } from '../github-app/app-auth';
+import { createRateLimiter } from '../middleware/rate-limiter';
+import { RATE_LIMITS } from '../middleware/rate-limit-configs';
 import { processPushEvent } from '../github-app/event-processors/push.processor';
 import { processPREvent } from '../github-app/event-processors/pr.processor';
 import { processInstallationEvent } from '../github-app/event-processors/install.processor';
@@ -97,8 +99,8 @@ const webhookHandler = async (req: Request, res: Response, next: NextFunction): 
   }
 };
 
-githubAppRouter.post('/', webhookHandler);
-githubAppRouter.post('/webhook', webhookHandler);
+githubAppRouter.post('/', createRateLimiter(RATE_LIMITS.githubAppWebhook), webhookHandler);
+githubAppRouter.post('/webhook', createRateLimiter(RATE_LIMITS.githubAppWebhook), webhookHandler);
 
 // GET /setup
 githubAppRouter.get('/setup', (_req: Request, res: Response) => {

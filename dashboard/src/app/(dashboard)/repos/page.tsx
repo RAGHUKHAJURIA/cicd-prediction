@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/hooks/use-auth';
 import { RepoCard } from '@/components/repos/repo-card';
 import { AddRepoModal } from '@/components/repos/add-repo-modal';
 import { ImportRepoModal } from '@/components/import/import-repo-modal';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import { Search, Plus, Loader2, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -16,7 +16,7 @@ const GitHubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export default function ReposPage() {
+function ReposPageContent() {
   const { user } = useAuth();
   const { repos, isLoading } = useRepos();
   const { stats } = useQueueStats();
@@ -192,5 +192,17 @@ export default function ReposPage() {
       <AddRepoModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
       <ImportRepoModal open={isImportModalOpen} onOpenChange={setIsImportModalOpen} />
     </div>
+  );
+}
+
+export default function ReposPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 text-accent animate-spin" />
+      </div>
+    }>
+      <ReposPageContent />
+    </Suspense>
   );
 }

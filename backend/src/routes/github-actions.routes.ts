@@ -8,6 +8,8 @@ import { successResponse } from "../utils/response";
 import { requireAuth } from "../middleware/auth.middleware";
 import { githubUserService, PatchInput } from "../services/github-user.service";
 import { logger } from "../utils/logger";
+import { createRateLimiter } from "../middleware/rate-limiter";
+import { RATE_LIMITS } from "../middleware/rate-limit-configs";
 
 const router = Router();
 
@@ -282,8 +284,8 @@ const validateUrl: RequestHandler = async (
 
 // ─── Register routes ──────────────────────────────────────────────────────────
 
-router.post("/push-patch", requireAuth, pushPatch);
-router.post("/create-pr", requireAuth, createPR);
+router.post("/push-patch", requireAuth, createRateLimiter(RATE_LIMITS.githubPushPatch), pushPatch);
+router.post("/create-pr", requireAuth, createRateLimiter(RATE_LIMITS.githubCreatePR), createPR);
 router.post("/validate-url", requireAuth, validateUrl);
 
 export const githubActionsRoutes = router;

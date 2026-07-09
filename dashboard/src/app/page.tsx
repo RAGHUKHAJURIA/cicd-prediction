@@ -31,7 +31,7 @@ export default function Home() {
               <ShieldAlert className="w-4.5 h-4.5 text-success" />
             </div>
             <span className="font-extrabold font-sans tracking-tight text-base text-white">
-              Antigravity.
+              CI/CD Agent.
             </span>
           </div>
 
@@ -45,7 +45,7 @@ export default function Home() {
               <span>Home</span>
             </Link>
             {[
-              { name: "Use Cases", href: "#" },
+              { name: "Use Cases", href: "#use-cases" },
               { name: "Docs", href: "/docs" },
               { name: "Dashboard", href: user ? "/repos" : "/login" },
             ].map((item, i) => (
@@ -173,7 +173,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="py-12 border-t border-white/[0.06] bg-black text-center text-sm font-sans text-gray-500">
         <div className="max-w-7xl mx-auto px-6">
-          <p>© 2026 Antigravity. Built for CI/CD Reliability Intelligence.</p>
+          <p>© 2026 CI/CD Agent. Built for CI/CD Reliability Intelligence.</p>
         </div>
       </footer>
     </div>

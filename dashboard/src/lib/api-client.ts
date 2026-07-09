@@ -26,7 +26,7 @@ class APIClient {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
   }
 
-  private async request<T>(
+  public async request<T>(
     method: string,
     path: string,
     body?: unknown,

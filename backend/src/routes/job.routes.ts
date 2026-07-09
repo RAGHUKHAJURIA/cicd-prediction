@@ -9,6 +9,9 @@ import { NotFoundError } from '../middleware/error-handler'
 import { JobStatusTracker } from '../queue/job-status'
 import { retryJob, cancelJob } from '../queue/producers'
 
+import { createRateLimiter } from '../middleware/rate-limiter'
+import { RATE_LIMITS } from '../middleware/rate-limit-configs'
+
 const router = Router()
 
 const jobIdParam = z.object({
@@ -154,6 +157,7 @@ const cancelWaitingJob: RequestHandler = async (
 
 router.get(
   '/:jobId/status',
+  createRateLimiter(RATE_LIMITS.jobStatus),
   validateParams(jobIdParam),
   getJobStatus
 )

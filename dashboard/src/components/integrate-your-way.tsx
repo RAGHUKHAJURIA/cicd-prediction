@@ -235,7 +235,7 @@ function LiquidGlassCard({ card }: { card: CardItem }) {
 
 export function IntegrateYourWay() {
   return (
-    <section className="py-24 relative z-10 border-t border-white/[0.06] bg-black overflow-hidden">
+    <section id="use-cases" className="py-24 relative z-10 border-t border-white/[0.06] bg-black overflow-hidden">
       {/* Dynamic Background Accents */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-success/5 rounded-full blur-[120px] pointer-events-none z-0" />
       

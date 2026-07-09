@@ -20,7 +20,7 @@ export interface JobStatus {
   updatedAt: string
 }
 
-const REDIS_TTL_SECONDS = 24 * 60 * 60 // 24 hours
+const REDIS_TTL_SECONDS = 3 * 24 * 60 * 60 // 3 days
 
 export class JobStatusTracker {
   private static getKey(jobId: string): string {
