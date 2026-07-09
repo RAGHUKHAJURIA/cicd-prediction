@@ -256,7 +256,17 @@ export default function RepoDetailPage() {
           progress={progress}
           currentStage={currentStage}
           repoName={`${repo.owner}/${repo.repoName}`}
-          onCancel={() => {
+          onCancel={async () => {
+            if (scanId) {
+              try {
+                await fetch(
+                  `${API_BASE}/api/repos/${repoId}/scans/${scanId}/cancel`,
+                  { method: 'POST', credentials: 'include' }
+                );
+              } catch (err) {
+                console.error('Failed to cancel scan:', err);
+              }
+            }
             setPhase('idle');
             setResults(null);
             setError(null);

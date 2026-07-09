@@ -22,7 +22,7 @@ export interface RepoSummary {
 
 export interface ScanSummary {
   id: string;
-  status: 'running' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'completed' | 'failed';
   branch: string;
   triggeredAt: string;
   completedAt: string | null;

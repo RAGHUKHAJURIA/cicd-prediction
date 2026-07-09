@@ -1,12 +1,15 @@
 // @ts-nocheck
 import React, { useState } from "react";
-import { GitBranch, ExternalLink } from "lucide-react";
+import { GitBranch, ExternalLink, X } from "lucide-react";
 import { GradeCard } from "./grade-card";
 import { ShareButton } from "./share-button";
 import { FileTree } from "./file-tree";
 import { CodePanel } from "./code-panel";
 import { FindingsList } from "./findings-list";
 import { AIFixPanel } from "./ai-fix-panel";
+import { useAuth } from "@/lib/hooks/use-auth";
+import { ApplyFixesButton } from "@/components/scans/apply-fixes-button";
+import { ApplyFixesModal } from "@/components/scans/apply-fixes-modal";
 
 const GithubIcon = () => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -23,7 +26,10 @@ const GitlabIcon = () => (
 export function ResultsShell({ flow }: { flow: any }) {
   const { state, selectFile, selectFinding, reset } = flow;
   const results = state.results;
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"files" | "code" | "ai">("code"); // Mobile tabs
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [applyResult, setApplyResult] = useState<any>(null);
 
   if (!results) {
     return <div className="p-8 text-center text-[#8b949e]">Loading results...</div>;
@@ -55,8 +61,70 @@ export function ResultsShell({ flow }: { flow: any }) {
     }
   };
 
+  const autoFixFiles = (results?.files
+    ? results.files.map((file: any) => ({
+        filePath: file.filePath,
+        appliedPatchRuleIds: (file.findings || [])
+          .filter((f: any) => f.patch && !f.requiresManualReview)
+          .map((f: any) => f.ruleId),
+        manualFixes: (file.findings || [])
+          .filter((f: any) => f.requiresManualReview)
+          .map((f: any) => ({
+            ruleId: f.ruleId,
+            filePath: f.filePath,
+            title: f.title,
+            severity: f.severity,
+            currentCode: f.patch?.before ?? '',
+            guidance: f.remediation ?? '',
+          })),
+      })).filter((f: any) => f.appliedPatchRuleIds.length > 0)
+    : []) ?? []
+
+  const hasAutoFixes = autoFixFiles.length > 0;
+  const autoFixCount = autoFixFiles.length;
+  const manualFixCount = allFindings?.filter((f: any) => f.requiresManualReview).length ?? 0;
+
   return (
     <div className="h-[calc(100vh-56px)] flex flex-col overflow-hidden bg-[#0d1117]">
+      {/* Toast Success Banner */}
+      {applyResult && (
+        <div className="p-4 flex items-center justify-between text-success shrink-0" style={{ backgroundColor: 'rgba(63, 185, 80, 0.1)', borderBottom: '1px solid rgba(63, 185, 80, 0.3)' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: '#3fb950' }} />
+            <span className="text-xs font-semibold text-white">
+              Fixes applied! {applyResult.pr ? 'Pull request created successfully.' : 'Branch created successfully.'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {applyResult.pr ? (
+              <a
+                href={applyResult.pr.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold underline text-success hover:text-white"
+              >
+                View Pull Request →
+              </a>
+            ) : (
+              <a
+                href={`https://github.com/${meta.repoName}/tree/${applyResult.branch}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold underline text-success hover:text-white"
+              >
+                View Branch →
+              </a>
+            )}
+            <button
+              onClick={() => setApplyResult(null)}
+              className="text-[#8b949e] hover:text-[#e6edf3] transition-colors p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ROW 1: HEADER */}
       <header className="h-16 shrink-0 bg-[#161b22] border-b border-[#30363d] px-5 flex items-center gap-4">
         <div className="flex flex-col justify-center max-w-[300px]">
@@ -90,6 +158,18 @@ export function ResultsShell({ flow }: { flow: any }) {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <ApplyFixesButton
+            scanId={meta.scanId}
+            repoId={meta.repoId}
+            repoName={meta.repoName}
+            branch={meta.branch}
+            defaultBranch={meta.defaultBranch || 'main'}
+            hasAutoFixes={hasAutoFixes}
+            autoFixCount={autoFixCount}
+            manualFixCount={manualFixCount}
+            isGithubConnected={!!user?.githubUsername}
+            onOpenModal={() => setShowApplyModal(true)}
+          />
           <button
             onClick={reset}
             className="hidden sm:flex h-8 px-3 rounded-md text-[13px] font-medium text-[#e6edf3] bg-transparent border border-[#30363d] hover:bg-[#21262d] transition-colors"
@@ -162,6 +242,32 @@ export function ResultsShell({ flow }: { flow: any }) {
           />
         </div>
       </div>
+
+      {showApplyModal && (
+        <ApplyFixesModal
+          scanId={meta.scanId}
+          repoId={meta.repoId}
+          repoName={meta.repoName}
+          branch={meta.branch}
+          defaultBranch={meta.defaultBranch || 'main'}
+          autoFixFiles={autoFixFiles}
+          manualFixes={allFindings
+            .filter((f: any) => f.requiresManualReview)
+            .map((f: any) => ({
+              ruleId: f.ruleId,
+              filePath: f.filePath,
+              title: f.title,
+              severity: f.severity,
+              currentCode: f.patch?.before ?? '',
+              guidance: f.remediation ?? '',
+            }))}
+          onClose={() => setShowApplyModal(false)}
+          onSuccess={(res) => {
+            setApplyResult(res)
+            setShowApplyModal(false)
+          }}
+        />
+      )}
     </div>
   );
 }

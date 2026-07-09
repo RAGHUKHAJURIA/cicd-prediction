@@ -2,14 +2,21 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShieldCheck, LayoutDashboard, GitBranch, Activity, Settings, Plus, ExternalLink, Search } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, GitBranch, Activity, Settings, Plus, ExternalLink, Search, Trash2 } from 'lucide-react';
 import { useRepos, useQueueStats } from '@/lib/hooks/use-scan';
+import { apiClient } from '@/lib/api-client';
 import clsx from 'clsx';
 import { differenceInHours } from 'date-fns';
 
+const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 16 16" fill="currentColor" {...props}>
+    <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 01-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 010 8c0-4.42 3.58-8 8-8z" />
+  </svg>
+);
+
 export function Sidebar() {
   const pathname = usePathname();
-  const { repos } = useRepos();
+  const { repos, mutate } = useRepos();
   const { stats } = useQueueStats();
 
   const activeJobsCount = (stats?.scanQueue.active || 0) + (stats?.analysisQueue.active || 0) + (stats?.aiQueue.active || 0);
@@ -71,37 +78,66 @@ export function Sidebar() {
             const statusColor = hoursSince === null ? 'bg-fg-subtle' : hoursSince < 1 ? 'bg-success' : hoursSince < 24 ? 'bg-warning' : 'bg-danger';
 
             return (
-              <Link
+              <div
                 key={repo.id}
-                href={`/repos/${repo.id}`}
                 className={clsx(
-                  'flex items-center px-3 py-1.5 rounded-lg text-sm transition-all duration-200 group border border-transparent',
+                  'flex items-center justify-between rounded-lg transition-all duration-200 group border border-transparent pr-1.5',
                   isActive 
                     ? 'bg-white/[0.06] border-white/[0.04] text-white font-medium shadow-sm' 
                     : 'text-fg-muted hover:bg-white/[0.04] hover:text-fg'
                 )}
               >
-                <div className={clsx('h-1.5 w-1.5 rounded-full mr-2', statusColor)} />
-                <span className="truncate flex-1 text-[13px]">{repo.repoName}</span>
-                {repo.latestScan?.riskGrade && (
-                  <span className={clsx(
-                    'text-[10px] px-1.5 py-0.5 rounded pill border font-bold opacity-0 group-hover:opacity-100 transition-opacity',
-                    repo.latestScan.riskGrade === 'A' ? 'text-success border-success-subtle bg-success-subtle/30' :
-                    repo.latestScan.riskGrade === 'F' ? 'text-danger border-danger-subtle bg-danger-subtle/30' :
-                    'text-fg border-white/[0.08] bg-white/[0.02]'
-                  )}>
-                    {repo.latestScan.riskGrade}
-                  </span>
-                )}
-              </Link>
+                <Link
+                  href={`/repos/${repo.id}`}
+                  className="flex items-center px-3 py-1.5 flex-1 min-w-0"
+                >
+                  <div className={clsx('h-1.5 w-1.5 rounded-full mr-2 shrink-0', statusColor)} />
+                  <span className="truncate text-[13px]">{repo.repoName}</span>
+                </Link>
+
+                <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {repo.latestScan?.riskGrade && (
+                    <span className={clsx(
+                      'text-[10px] px-1.5 py-0.5 rounded pill border font-bold',
+                      repo.latestScan.riskGrade === 'A' ? 'text-success border-success-subtle bg-success-subtle/30' :
+                      repo.latestScan.riskGrade === 'F' ? 'text-danger border-danger-subtle bg-danger-subtle/30' :
+                      'text-fg border-white/[0.08] bg-white/[0.02]'
+                    )}>
+                      {repo.latestScan.riskGrade}
+                    </span>
+                  )}
+                  <button
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (window.confirm(`Are you sure you want to delete repository "${repo.owner}/${repo.repoName}" and all of its scans?`)) {
+                        try {
+                          await apiClient.deleteRepo(repo.id);
+                          mutate();
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }
+                    }}
+                    className="p-1 rounded hover:bg-danger/25 text-fg-muted hover:text-danger transition-colors"
+                    title="Delete Repository"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
             );
           })}
         </div>
 
-        <div className="mt-2 px-2">
+        <div className="mt-2 px-2 flex flex-col gap-1">
           <Link href="/repos?add=true" className="flex items-center px-2 py-1.5 text-xs text-fg-muted hover:text-fg transition-colors group">
             <Plus className="h-3 w-3 mr-2 group-hover:text-accent transition-colors" />
             Add repository
+          </Link>
+          <Link href="/repos?import=true" className="flex items-center px-2 py-1.5 text-xs text-fg-muted hover:text-fg transition-colors group">
+            <GithubIcon className="h-3 w-3 mr-2 group-hover:text-accent transition-colors" />
+            Import from GitHub
           </Link>
         </div>
       </div>

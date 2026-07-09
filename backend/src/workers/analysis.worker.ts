@@ -139,6 +139,21 @@ export class AnalysisWorker {
 
     await this.updateProgress(job, 10)
 
+    if (await this.isCancelled(scanId)) {
+      this.log('scan_cancelled_early', { scanId })
+      return {
+        scanId,
+        repoId,
+        findingsCount: 0,
+        criticalCount: 0,
+        highCount: 0,
+        overallScore: 0,
+        riskGrade: 'F',
+        queuedAI: false,
+        durationMs: Date.now() - start
+      }
+    }
+
     const artifacts = await db
       .select()
       .from(parsedArtifacts)
@@ -230,6 +245,21 @@ export class AnalysisWorker {
       .where(eq(scans.id, scanId))
 
     await this.updateProgress(job, 90)
+
+    if (await this.isCancelled(scanId)) {
+      this.log('scan_cancelled_early', { scanId })
+      return {
+        scanId,
+        repoId,
+        findingsCount: findingRows.length,
+        criticalCount: analysisReport.summary.findingsBySeverity['critical' as RuleSeverity] ?? 0,
+        highCount:     analysisReport.summary.findingsBySeverity['high' as RuleSeverity] ?? 0,
+        overallScore:  Math.round(analysisReport.summary.score),
+        riskGrade:     analysisReport.summary.grade,
+        queuedAI:      false,
+        durationMs:    Date.now() - start
+      }
+    }
 
     const shouldRunAI = (
       analysisReport.summary.score >= AI_SCORE_THRESHOLD ||
@@ -342,6 +372,15 @@ export class AnalysisWorker {
         errorMessage: err.message
       })
       .where(eq(scans.id, scanId))
+  }
+
+  private async isCancelled(scanId: string): Promise<boolean> {
+    const [scan] = await db
+      .select({ status: scans.status })
+      .from(scans)
+      .where(eq(scans.id, scanId))
+      .limit(1)
+    return scan?.status === 'cancelled'
   }
 
   private log(event: string, data: Record<string, unknown>): void {

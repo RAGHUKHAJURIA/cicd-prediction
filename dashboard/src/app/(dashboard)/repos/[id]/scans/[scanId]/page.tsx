@@ -2,7 +2,7 @@
 
 import { useScan, useAIJob, useRepos } from '@/lib/hooks/use-scan';
 import { useParams } from 'next/navigation';
-import { Loader2, FileCode, Shield, Zap, Settings, Activity } from 'lucide-react';
+import { Loader2, FileCode, Shield, Zap, Settings, Activity, X, ExternalLink } from 'lucide-react';
 import { ScoreGauge } from '@/components/scans/score-gauge';
 import { FindingsTable } from '@/components/scans/findings-table';
 import { RiskHeatmap } from '@/components/scans/risk-heatmap';
@@ -10,6 +10,11 @@ import { AIReportPanel } from '@/components/scans/ai-report-panel';
 import { ScanResultsShell } from '@/components/scan-results/scan-results-shell';
 import * as Tabs from '@radix-ui/react-tabs';
 import Link from 'next/link';
+import { useAuth } from '@/lib/hooks/use-auth';
+import { ApplyFixesButton } from '@/components/scans/apply-fixes-button';
+import { ApplyFixesModal } from '@/components/scans/apply-fixes-modal';
+import { useState } from 'react';
+import type { ApplyFixesResult } from '@/lib/types';
 
 export default function ScanDetailPage() {
   const params = useParams();
@@ -18,6 +23,10 @@ export default function ScanDetailPage() {
   const { scan, isLoading } = useScan(repoId, scanId);
   const { repos } = useRepos();
   const repo = repos.find(r => r.id === repoId);
+  const { user } = useAuth();
+
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [applyResult, setApplyResult] = useState<ApplyFixesResult | null>(null);
 
   // We assume the AI job id is stored somehow, or we query for it. For now, we'll let AIReportPanel trigger it.
   const { job: aiJob } = useAIJob(scanId, scan?.analysisReport?.id, 'report');
@@ -26,9 +35,74 @@ export default function ScanDetailPage() {
     return <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>;
   }
 
+  const autoFixFiles = (scan?.findings?.byFile
+    ? Object.entries(scan.findings.byFile).map(
+        ([filePath, fileFindings]) => ({
+          filePath,
+          appliedPatchRuleIds: (fileFindings as any[])
+            .filter((f: any) => f.patch && !f.requiresManualReview)
+            .map((f: any) => f.ruleId),
+          manualFixes: (fileFindings as any[])
+            .filter((f: any) => f.requiresManualReview)
+            .map((f: any) => ({
+              ruleId: f.ruleId,
+              filePath: f.filePath,
+              title: f.title,
+              severity: f.severity,
+              currentCode: f.patch?.before ?? '',
+              guidance: f.remediation ?? '',
+            })),
+        })
+      ).filter(f => f.appliedPatchRuleIds.length > 0)
+    : []) ?? []
+
+  const hasAutoFixes = autoFixFiles.length > 0;
+  const autoFixCount = autoFixFiles.length;
+  const manualFixCount = (scan?.findings?.all as any[])
+    ?.filter((f: any) => f.requiresManualReview).length ?? 0;
+
   return (
     <div className="max-w-7xl mx-auto p-6 animate-fade-in">
       
+      {/* Toast Success Banner */}
+      {applyResult && (
+        <div className="mb-6 p-4 rounded-lg flex items-center justify-between text-success animate-fade-in" style={{ backgroundColor: 'rgba(63, 185, 80, 0.1)', border: '1px solid rgba(63, 185, 80, 0.3)' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: '#3fb950' }} />
+            <span className="text-xs font-semibold text-white">
+              Fixes applied! {applyResult.pr ? 'Pull request created successfully.' : 'Branch created successfully.'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {applyResult.pr ? (
+              <a
+                href={applyResult.pr.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold underline text-success hover:text-white"
+              >
+                View Pull Request →
+              </a>
+            ) : (
+              <a
+                href={`https://github.com/${repo?.owner}/${repo?.repoName}/tree/${applyResult.branch}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold underline text-success hover:text-white"
+              >
+                View Branch →
+              </a>
+            )}
+            <button
+              onClick={() => setApplyResult(null)}
+              className="text-fg-muted hover:text-fg transition-colors p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
         <div>
@@ -42,7 +116,19 @@ export default function ScanDetailPage() {
           <ScoreGauge score={scan.riskScore} grade={scan.riskGrade} />
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex items-center gap-4">
+          <ApplyFixesButton
+            scanId={scanId}
+            repoId={repoId}
+            repoName={repo?.repoName ?? ''}
+            branch={scan.branch}
+            defaultBranch={repo?.defaultBranch ?? 'main'}
+            hasAutoFixes={hasAutoFixes}
+            autoFixCount={autoFixCount}
+            manualFixCount={manualFixCount}
+            isGithubConnected={!!user?.githubUsername}
+            onOpenModal={() => setShowApplyModal(true)}
+          />
           <Link 
             href={`/repos/${repoId}/scans/${scanId}/dag`}
             className="px-4 py-2 bg-canvas-subtle hover:bg-border-muted border border-border rounded-md text-sm font-medium text-fg transition-colors"
@@ -54,6 +140,32 @@ export default function ScanDetailPage() {
           </button>
         </div>
       </div>
+
+      {showApplyModal && (
+        <ApplyFixesModal
+          scanId={scanId}
+          repoId={repoId}
+          repoName={repo?.repoName ?? ''}
+          branch={scan.branch}
+          defaultBranch={repo?.defaultBranch ?? 'main'}
+          autoFixFiles={autoFixFiles}
+          manualFixes={(scan.findings?.all as any[])
+            .filter((f: any) => f.requiresManualReview)
+            .map((f: any) => ({
+              ruleId: f.ruleId,
+              filePath: f.filePath,
+              title: f.title,
+              severity: f.severity,
+              currentCode: f.patch?.before ?? '',
+              guidance: f.remediation ?? ''
+            }))}
+          onClose={() => setShowApplyModal(false)}
+          onSuccess={(res) => {
+            setApplyResult(res)
+            setShowApplyModal(false)
+          }}
+        />
+      )}
 
       {/* Tabs */}
       <Tabs.Root defaultValue="overview" className="flex flex-col w-full">

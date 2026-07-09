@@ -5,9 +5,10 @@ import { useAuth } from '@/lib/hooks/use-auth';
 import { RepoCard } from '@/components/repos/repo-card';
 import { AddRepoModal } from '@/components/repos/add-repo-modal';
 import { ImportRepoModal } from '@/components/import/import-repo-modal';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Loader2, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 const GitHubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 16 16" fill="currentColor" {...props}>
@@ -22,6 +23,16 @@ export default function ReposPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('add') === 'true') {
+      setIsAddModalOpen(true);
+    }
+    if (searchParams.get('import') === 'true') {
+      setIsImportModalOpen(true);
+    }
+  }, [searchParams]);
 
   const filteredRepos = useMemo(() => {
     if (!search) return repos;

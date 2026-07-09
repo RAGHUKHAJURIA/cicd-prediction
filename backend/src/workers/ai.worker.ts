@@ -144,6 +144,20 @@ export class AIWorker {
 
     await this.updateProgress(job, 10)
 
+    if (await this.isCancelled(scanId)) {
+      this.log('scan_cancelled_early', { scanId })
+      return {
+        scanId,
+        repoId,
+        explanationsGenerated: 0,
+        remediationsGenerated: 0,
+        predictionsGenerated: 0,
+        tokensUsed: 0,
+        estimatedCostUsd: 0,
+        durationMs: Date.now() - start
+      }
+    }
+
     let aiContext: AIContext
     try {
       aiContext = JSON.parse(aiContextJson) as AIContext
@@ -431,6 +445,15 @@ export class AIWorker {
         errorMessage: err.message
       })
       .where(eq(scans.id, scanId))
+  }
+
+  private async isCancelled(scanId: string): Promise<boolean> {
+    const [scan] = await db
+      .select({ status: scans.status })
+      .from(scans)
+      .where(eq(scans.id, scanId))
+      .limit(1)
+    return scan?.status === 'cancelled'
   }
 
   private log(event: string, data: Record<string, unknown>): void {

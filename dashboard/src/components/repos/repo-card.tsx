@@ -14,9 +14,11 @@ export function RepoCard({ repo }: { repo: RepoSummary }) {
   const [isScanning, setIsScanning] = useState(false);
   const { mutate } = useSWRConfig();
   const scan = repo.latestScan;
+  const isCurrentlyScanning = scan?.status === 'running' || scan?.status === 'queued' || isScanning;
 
   const handleScan = async (e: React.MouseEvent) => {
     e.preventDefault();
+    if (isCurrentlyScanning) return;
     setIsScanning(true);
     try {
       await apiClient.triggerScan(repo.id);
@@ -24,7 +26,7 @@ export function RepoCard({ repo }: { repo: RepoSummary }) {
     } catch (err) {
       console.error(err);
     } finally {
-      setTimeout(() => setIsScanning(false), 2000);
+      setIsScanning(false);
     }
   };
 
@@ -38,7 +40,7 @@ export function RepoCard({ repo }: { repo: RepoSummary }) {
   return (
     <div className={clsx(
       "bg-canvas-subtle border border-border rounded-md p-4 transition-all duration-200 group flex flex-col",
-      isScanning ? "border-accent glow-accent" : "hover:border-accent hover:glow-accent"
+      isCurrentlyScanning ? "border-accent glow-accent" : "hover:border-accent hover:glow-accent"
     )}>
       {/* Header */}
       <div className="flex justify-between items-start mb-3">
@@ -60,9 +62,13 @@ export function RepoCard({ repo }: { repo: RepoSummary }) {
         <div className="flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5" />
           <span>
-            {scan?.triggeredAt 
-              ? `Last scan: ${formatDistanceToNow(new Date(scan.triggeredAt))} ago`
-              : 'Never scanned'}
+            {scan?.status === 'running' || scan?.status === 'queued' ? (
+              <span className="text-accent animate-pulse font-medium">Scan in progress...</span>
+            ) : scan?.triggeredAt ? (
+              `Last scan: ${formatDistanceToNow(new Date(scan.triggeredAt))} ago`
+            ) : (
+              'Never scanned'
+            )}
           </span>
         </div>
 
@@ -93,25 +99,50 @@ export function RepoCard({ repo }: { repo: RepoSummary }) {
 
       {/* Actions */}
       <div className="flex gap-2 mt-auto pt-3 border-t border-border-muted">
-        <button
-          onClick={handleScan}
-          disabled={isScanning}
-          className={clsx(
-            "flex-1 flex justify-center items-center gap-1.5 py-1.5 text-xs font-medium rounded transition-colors border",
-            isScanning
-              ? "bg-canvas text-fg-muted border-border cursor-not-allowed"
-              : "bg-canvas hover:bg-border-muted text-fg border-border hover:border-fg-subtle"
-          )}
-        >
-          {isScanning ? (
-            <><span className="h-3 w-3 rounded-full border border-fg-muted border-t-transparent animate-spin"/> Scanning...</>
-          ) : (
-            <><Play className="w-3 h-3 fill-current" /> Scan now</>
-          )}
-        </button>
+        {isCurrentlyScanning && scan?.id ? (
+          <button
+            onClick={async (e) => {
+              e.preventDefault();
+              if (window.confirm("Are you sure you want to stop this scan?")) {
+                try {
+                  await apiClient.cancelScan(repo.id, scan.id);
+                  mutate('repos');
+                } catch (err) {
+                  console.error(err);
+                }
+              }
+            }}
+            className="flex-1 flex justify-center items-center gap-1.5 py-1.5 text-xs font-medium rounded border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20 hover:border-danger/50 transition-colors"
+          >
+            <span className="w-2 h-2 bg-current rounded-sm mr-1 animate-pulse" />
+            Stop scan
+          </button>
+        ) : (
+          <button
+            onClick={handleScan}
+            disabled={isCurrentlyScanning}
+            className={clsx(
+              "flex-1 flex justify-center items-center gap-1.5 py-1.5 text-xs font-medium rounded transition-colors border",
+              isCurrentlyScanning
+                ? "bg-canvas text-fg-muted border-border cursor-not-allowed"
+                : "bg-canvas hover:bg-border-muted text-fg border-border hover:border-fg-subtle"
+            )}
+          >
+            {isCurrentlyScanning ? (
+              <><span className="h-3 w-3 rounded-full border border-accent border-t-transparent animate-spin"/> Scanning...</>
+            ) : (
+               <><Play className="w-3 h-3 fill-current" /> Scan now</>
+            )}
+          </button>
+        )}
         <Link 
-          href={`/repos/${repo.id}/scans/latest`}
-          className="flex-1 flex justify-center items-center py-1.5 text-xs font-medium rounded bg-canvas hover:bg-border-muted text-fg border border-border hover:border-fg-subtle transition-colors"
+          href={scan ? `/repos/${repo.id}/scans/latest` : '#'}
+          className={clsx(
+            "flex-1 flex justify-center items-center py-1.5 text-xs font-medium rounded border transition-colors",
+            scan 
+              ? "bg-canvas hover:bg-border-muted text-fg border-border hover:border-fg-subtle"
+              : "bg-canvas-inset text-fg-muted border-border opacity-50 cursor-not-allowed pointer-events-none"
+          )}
         >
           View findings
         </Link>

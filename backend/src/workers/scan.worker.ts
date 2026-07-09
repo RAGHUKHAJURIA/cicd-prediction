@@ -188,6 +188,20 @@ export class ScanWorker {
 
       await this.updateProgress(job, 5)
 
+      if (await this.isCancelled(scanId)) {
+        this.log('scan_cancelled_early', { scanId })
+        return {
+          scanId,
+          repoId,
+          filesFound: 0,
+          filesParsed: 0,
+          failedFiles: 0,
+          parsedArtifactIds: [],
+          queuedAnalysis: false,
+          durationMs: Date.now() - start
+        }
+      }
+
       const token = githubToken || (await queueRedis.get(`temp-token:${repoId}`)) || process.env.GITHUB_TOKEN;
       const github = new GitHubClient(token || undefined);
 
@@ -330,6 +344,20 @@ export class ScanWorker {
       }
 
       await this.updateProgress(job, 95)
+
+      if (await this.isCancelled(scanId)) {
+        this.log('scan_cancelled_early', { scanId })
+        return {
+          scanId,
+          repoId,
+          filesFound: insertedIds.length,
+          filesParsed: insertedIds.length,
+          failedFiles: 0,
+          parsedArtifactIds: insertedIds,
+          queuedAnalysis: false,
+          durationMs: Date.now() - start
+        }
+      }
 
       if (insertedIds.length > 0) {
         const analysisJob = await enqueueAnalysis({
@@ -547,6 +575,15 @@ export class ScanWorker {
         errorMessage: err.message
       })
       .where(eq(scans.id, scanId))
+  }
+
+  private async isCancelled(scanId: string): Promise<boolean> {
+    const [scan] = await db
+      .select({ status: scans.status })
+      .from(scans)
+      .where(eq(scans.id, scanId))
+      .limit(1)
+    return scan?.status === 'cancelled'
   }
 
   private log(event: string, data: Record<string, unknown>): void {

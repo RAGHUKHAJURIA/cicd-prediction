@@ -8,10 +8,12 @@ import type {
   CreateRepoInput,
   ScanOptions,
   RepoSettings,
+  ApplyFixesResult,
+  ApplyFixesRequest,
 } from './types';
 
 export class APIError extends Error {
-  constructor(public message: string, public status: number) {
+  constructor(public message: string, public status: number, public code?: string) {
     super(message);
     this.name = 'APIError';
   }
@@ -53,7 +55,8 @@ class APIClient {
     if (!response.ok) {
       throw new APIError(
         data?.error || data?.message || 'An API error occurred',
-        response.status
+        response.status,
+        data?.code
       );
     }
 
@@ -113,6 +116,11 @@ class APIClient {
     return result.data;
   }
 
+  async cancelScan(repoId: string, scanId: string): Promise<{ success: boolean; message: string }> {
+    const result = await this.request<{ success: boolean; message: string }>('POST', `/api/repos/${repoId}/scans/${scanId}/cancel`);
+    return result;
+  }
+
   async getScans(
     repoId: string,
     params?: { page?: number; status?: string }
@@ -165,6 +173,11 @@ class APIClient {
 
   async getAIReportStatus(scanId: string, jobId: string): Promise<AIJobStatus> {
     const result = await this.request<{ data: AIJobStatus }>('GET', `/api/scans/${scanId}/ai-report/${jobId}`);
+    return result.data;
+  }
+
+  async applyFixes(repoId: string, scanId: string, body: ApplyFixesRequest): Promise<ApplyFixesResult> {
+    const result = await this.request<{ success: boolean; data: ApplyFixesResult }>('POST', `/api/repos/${repoId}/scans/${scanId}/apply-fixes`, body);
     return result.data;
   }
 

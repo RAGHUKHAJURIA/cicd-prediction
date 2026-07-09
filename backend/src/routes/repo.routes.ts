@@ -257,10 +257,40 @@ const listRepos: RequestHandler = async (
     const total = totalResult[0]?.count ?? 0;
     const totalPages = Math.ceil(total / limit);
 
+    // Fetch latest scan for each repo in the list
+    const repoIds = rows.map(r => r.id);
+    let latestScans: any[] = [];
+    if (repoIds.length > 0) {
+      const scansResult = await db.execute(sql`
+        SELECT DISTINCT ON (s.repo_id)
+          s.id, s.status, s.branch, s.triggered_at as "triggeredAt",
+          s.completed_at as "completedAt", s.duration_ms as "durationMs",
+          s.total_files as "totalFiles", s.total_findings as "totalFindings",
+          s.critical_count as "criticalCount", s.high_count as "highCount",
+          s.medium_count as "mediumCount", s.low_count as "lowCount",
+          COALESCE(ar.overall_score, 0) as "riskScore",
+          COALESCE(ar.risk_grade, 'F') as "riskGrade",
+          s.error_message as "errorMessage", s.repo_id as "repoId"
+        FROM scans s
+        LEFT JOIN analysis_reports ar ON s.id = ar.scan_id
+        WHERE s.repo_id IN (${sql.join(repoIds)})
+        ORDER BY s.repo_id, s.triggered_at DESC
+      `);
+      latestScans = scansResult.rows;
+    }
+
+    const reposWithLatestScan = rows.map(repo => {
+      const latestScan = latestScans.find(s => s.repoId === repo.id) || null;
+      return {
+        ...repo,
+        latestScan,
+      };
+    });
+
     res.status(200).json({
       success: true,
       data: {
-        repos: rows,
+        repos: reposWithLatestScan,
         pagination: {
           page,
           limit,
