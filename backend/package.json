@@ -60,5 +60,13 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "esbuild",
+      "msgpackr-extract",
+      "protobufjs"
+    ]
+  },
   "license": "MIT"
 }
