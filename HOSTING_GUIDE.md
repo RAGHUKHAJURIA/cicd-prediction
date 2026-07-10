@@ -85,10 +85,12 @@ Your backend API uses the code in `/backend`. Railway will build this using `bac
     NODE_ENV=production
     PORT=3000
     DATABASE_URL=your_production_postgresql_connection_string
+    DATABASE_SSL=true # Forces SSL for DB (automatically enabled in production unless localhost)
     REDIS_HOST=your_production_redis_host
     REDIS_PORT=your_production_redis_port
     REDIS_PASSWORD=your_production_redis_password
     REDIS_TLS=true  # Set to true if using Upstash / Railway Redis with SSL
+    START_WORKERS=false  # CRITICAL: Prevents workers from running inside the API container
     SESSION_SECRET=a_random_64_character_hex_string
     ENCRYPTION_KEY=a_random_32_character_hex_string
     ACCESS_TOKEN_ENCRYPTION_KEY=a_random_32_character_hex_string
@@ -110,7 +112,8 @@ For **each** worker, repeat the following steps in Railway:
     *   **Build Provider**: Set to **Dockerfile** (using `Dockerfile.worker` in the backend).
     *   **Start Command**: Keep default (which executes `node dist/workers/worker-manager.js` as defined in the `Dockerfile.worker`'s CMD).
 3. Go to the **Variables** tab. Copy all variables from the Backend API service (Railway makes this easy with a "Copy From..." option), and add/modify:
-    *   **`WORKER_TYPE`**: 
+    *   **`START_WORKERS`**: Keep this as `true` (or omit/remove it, as it defaults to `true`).
+    *   **`WORKER_TYPE`**: (Crucial: WorkerManager uses this to run only the specific worker type)
         *   For the scan worker: Set to `scan`
         *   For the analysis worker: Set to `analysis`
         *   For the AI worker: Set to `ai`

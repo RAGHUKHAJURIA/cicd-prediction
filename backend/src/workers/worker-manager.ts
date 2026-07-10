@@ -19,24 +19,36 @@ export class WorkerManager {
   }
 
   async startAll(): Promise<void> {
+    const workerType = process.env["WORKER_TYPE"];
     console.log(JSON.stringify({
       event: LOG_EVENTS.WORKER_STARTED,
-      message: 'Starting all workers',
+      message: `Starting workers (Type: ${workerType || 'all'})`,
       timestamp: new Date().toISOString()
     }))
 
     this.startedAt = Date.now()
 
-    this.scanWorker.start()
-    this.analysisWorker.start()
-    this.aiWorker.start()
+    const activeWorkers: string[] = []
+
+    if (!workerType || workerType === 'scan' || workerType === 'all') {
+      this.scanWorker.start()
+      activeWorkers.push('scan-worker')
+    }
+    if (!workerType || workerType === 'analysis' || workerType === 'all') {
+      this.analysisWorker.start()
+      activeWorkers.push('analysis-worker')
+    }
+    if (!workerType || workerType === 'ai' || workerType === 'all') {
+      this.aiWorker.start()
+      activeWorkers.push('ai-worker')
+    }
 
     this.startHealthHeartbeat()
     this.registerProcessSignals()
 
     console.log(JSON.stringify({
       event: 'all_workers_started',
-      workers: ['scan-worker', 'analysis-worker', 'ai-worker'],
+      workers: activeWorkers,
       timestamp: new Date().toISOString()
     }))
   }
@@ -51,11 +63,20 @@ export class WorkerManager {
       clearInterval(this.heartbeatTimer)
     }
 
-    await Promise.allSettled([
-      this.scanWorker.stop(),
-      this.analysisWorker.stop(),
-      this.aiWorker.stop()
-    ])
+    const workerType = process.env["WORKER_TYPE"];
+    const stopPromises = []
+
+    if (!workerType || workerType === 'scan' || workerType === 'all') {
+      stopPromises.push(this.scanWorker.stop())
+    }
+    if (!workerType || workerType === 'analysis' || workerType === 'all') {
+      stopPromises.push(this.analysisWorker.stop())
+    }
+    if (!workerType || workerType === 'ai' || workerType === 'all') {
+      stopPromises.push(this.aiWorker.stop())
+    }
+
+    await Promise.allSettled(stopPromises)
 
     await closeQueues()
     await closeRedisConnections()
@@ -67,19 +88,27 @@ export class WorkerManager {
   }
 
   async getHealth(): Promise<WorkerManagerHealth> {
-    const [scanHealth, analysisHealth, aiHealth] = await Promise.all([
-      this.scanWorker.getHealth(),
-      this.analysisWorker.getHealth(),
-      this.aiWorker.getHealth()
-    ])
+    const workerType = process.env["WORKER_TYPE"];
+    const healthPromises = []
 
-    const workers = [scanHealth, analysisHealth, aiHealth]
+    if (!workerType || workerType === 'scan' || workerType === 'all') {
+      healthPromises.push(this.scanWorker.getHealth())
+    }
+    if (!workerType || workerType === 'analysis' || workerType === 'all') {
+      healthPromises.push(this.analysisWorker.getHealth())
+    }
+    if (!workerType || workerType === 'ai' || workerType === 'all') {
+      healthPromises.push(this.aiWorker.getHealth())
+    }
+
+    const workers = await Promise.all(healthPromises)
+    const expectedCount = workers.length
     const runningCount = workers.filter(
       w => w.status === WorkerStatus.RUNNING
     ).length
 
     const overall: WorkerManagerHealth['overall'] =
-      runningCount === 3 ? 'healthy' :
+      runningCount === expectedCount ? 'healthy' :
       runningCount > 0   ? 'degraded' : 'down'
 
     return {

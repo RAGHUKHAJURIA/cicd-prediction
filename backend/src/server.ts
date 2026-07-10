@@ -39,8 +39,14 @@ async function bootstrap(): Promise<void> {
     console.warn("[server] ⚠  RESEND_API_KEY is not set — registration emails will be skipped.");
   }
 
-  const workerManager = new WorkerManager();
-  await workerManager.startAll();
+  let workerManager: WorkerManager | null = null;
+  const startWorkers = process.env["START_WORKERS"] !== "false";
+  if (startWorkers) {
+    workerManager = new WorkerManager();
+    await workerManager.startAll();
+  } else {
+    console.log("[server] Background workers disabled in this process (START_WORKERS=false).");
+  }
 
   const app = createApp();
   const server = http.createServer(app);
@@ -65,7 +71,9 @@ async function bootstrap(): Promise<void> {
       console.log("[server] HTTP server closed.");
     });
 
-    await workerManager.stopAll();
+    if (workerManager) {
+      await workerManager.stopAll();
+    }
 
     try {
       await pool.end();
